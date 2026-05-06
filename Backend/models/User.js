@@ -28,6 +28,14 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 100
   },
+  points: {
+    type: Number,
+    default: 0
+  },
+  totalReports: {
+    type: Number,
+    default: 0
+  },
   avgSpeed: {
     type: Number,
     default: 0

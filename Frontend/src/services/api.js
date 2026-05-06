@@ -64,4 +64,12 @@ export const reportService = {
   verifyReport: (id, action) => api.put(`/reports/verify/${id}`, { action })
 };
 
+export const complaintService = {
+  createComplaint: (formData) =>
+    api.post('/complaints', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  getComplaints: () => api.get('/complaints'),
+};
+
 export default api;

@@ -8,6 +8,7 @@ import TopAppBar from '../components/TopAppBar';
 import BottomNavBar from '../components/BottomNavBar';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import { useLocation } from 'react-router-dom';
 
 // ── Leaflet Setup ──
 delete L.Icon.Default.prototype._getIconUrl;
@@ -17,18 +18,22 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+const getSeverityColor = (severity) => {
+  if (severity === 'Critical') return '#FF4C4C';
+  if (severity === 'High') return '#FFA500';
+  if (severity === 'Medium') return '#FFD700';
+  return '#4CAF50';
+};
+
 const createCustomIcon = (severity) => {
-  let colorClass = 'bg-[#4CAF50]'; // Green -> Low
-  if (severity === 'Critical') colorClass = 'bg-[#FF4C4C]'; // Red
-  else if (severity === 'High') colorClass = 'bg-[#FFA500]'; // Orange
-  else if (severity === 'Medium') colorClass = 'bg-[#FFD700]'; // Yellow
+  const color = getSeverityColor(severity);
 
   return L.divIcon({
     className: 'custom-leaflet-icon',
     html: `
       <div class="relative flex items-center justify-center w-8 h-8">
-        <div class="absolute inset-0 rounded-full ${colorClass} opacity-40 animate-ping"></div>
-        <div class="relative z-[1] w-4 h-4 rounded-full border-2 border-white shadow-md" style="background-color: ${colorClass.replace('bg-[', '').replace(']', '')}"></div>
+        <div class="absolute inset-0 rounded-full opacity-40 animate-ping" style="background-color: ${color}"></div>
+        <div class="relative z-[1] w-4 h-4 rounded-full border-2 border-white shadow-md" style="background-color: ${color}"></div>
       </div>
     `,
     iconSize: [32, 32],
@@ -75,6 +80,28 @@ function MapEvents({ onMapClick }) {
       onMapClick(e.latlng);
     }
   });
+  return null;
+}
+
+function MapSizeInvalidator({ isNavigating, routesCount, selectedRouteId }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const invalidate = () => map.invalidateSize({ animate: false });
+    let timeoutId;
+    const frame = window.requestAnimationFrame(() => {
+      invalidate();
+      timeoutId = window.setTimeout(invalidate, 250);
+    });
+
+    window.addEventListener('resize', invalidate);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (timeoutId) window.clearTimeout(timeoutId);
+      window.removeEventListener('resize', invalidate);
+    };
+  }, [map, isNavigating, routesCount, selectedRouteId]);
+
   return null;
 }
 
@@ -132,6 +159,9 @@ class ErrorBoundary extends React.Component {
 }
 
 function MapNavigation() {
+  const location = useLocation();
+  const focusReport = location.state?.focusReport;
+
   // ── Map State ──
   const [markers, setMarkers] = useState([]);
   const [heatData, setHeatData] = useState([]);
@@ -167,6 +197,12 @@ function MapNavigation() {
   const lastSpokenHazardRef = useRef(null);
   const verifiedPotholes = useRef(new Set());
   const searchTimeout = useRef(null);
+  const initialLocationSetRef = useRef(false);
+  const sourceQueryRef = useRef(sourceQuery);
+  
+  useEffect(() => {
+    sourceQueryRef.current = sourceQuery;
+  }, [sourceQuery]);
 
   // ── Voice Alert Helper ──
   const speak = (text) => {
@@ -215,38 +251,101 @@ function MapNavigation() {
     }
   };
 
-  // ── 1. Automatic Current Location Setup ──
+  useEffect(() => {
+    const refreshMapData = () => fetchMapData();
+    const refreshWhenVisible = () => {
+      if (!document.hidden) refreshMapData();
+    };
+
+    const intervalId = window.setInterval(refreshMapData, 30000);
+    window.addEventListener('focus', refreshMapData);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshMapData);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!focusReport || !Number.isFinite(Number(focusReport.lat)) || !Number.isFinite(Number(focusReport.lng))) return;
+
+    const coords = [Number(focusReport.lat), Number(focusReport.lng)];
+    const timeoutId = window.setTimeout(() => {
+      setMapCenter(coords);
+      setMapZoom(17);
+      fetchMapData();
+    }, 0);
+    toast.success('Report location shown on map');
+
+    return () => window.clearTimeout(timeoutId);
+  }, [focusReport]);
+
+  // ── 1. Aggressive GPS Acquisition ──
   useEffect(() => {
     fetchMapData();
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const loc = [pos.coords.latitude, pos.coords.longitude];
-          setUserLocation(loc);
-          setSourceCoords(loc);
-          setMapCenter(loc);
-          
-          try {
-             const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc[0]}&lon=${loc[1]}`);
-             const data = await res.json();
-             if (data && data.address) {
-                const city = data.address.city || data.address.town || data.address.village || 'Location';
-                setSourceQuery(`Your Location (${city})`);
-             } else {
-                setSourceQuery('Your Location');
-             }
-          } catch(e) {
-             setSourceQuery('Your Location');
-          }
-        },
-        (err) => {
-          console.warn('GPS init error:', err);
-          toast.error('GPS permission denied. Using default location.');
-          setSourceQuery('');
-        },
-        { enableHighAccuracy: true }
-      );
+    
+    if (!navigator.geolocation) {
+      toast.error('Geolocation not supported');
+      return;
     }
+
+    const onLocationSuccess = async (pos) => {
+      const { latitude, longitude, accuracy } = pos.coords;
+      const loc = [latitude, longitude];
+      console.log(`[GPS] Fix acquired: ${latitude}, ${longitude} (±${accuracy}m)`);
+      
+      setUserLocation(loc);
+
+      // If we haven't locked a high-accuracy center yet, keep following the GPS
+      if (!initialLocationSetRef.current) {
+        setMapCenter(loc);
+        setSourceCoords(loc);
+
+        // If accuracy is good (less than 150m), lock it so it stops jumping
+        if (accuracy < 150) {
+          initialLocationSetRef.current = true;
+          console.log('[GPS] High accuracy fix locked.');
+        }
+
+        // Update UI Label
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`);
+          const data = await res.json();
+          if (data && data.address) {
+            const city = data.address.city || data.address.town || data.address.village || data.address.suburb || 'Location';
+            setSourceQuery(`Your Location (${city})`);
+          }
+        } catch(e) {}
+      } else if (sourceQueryRef.current.includes('Your Location') && destCoords) {
+        // If we already have a route but our 'Your Location' just shifted significantly (more than 500m)
+        // re-calculate the route automatically from the new precise location
+        const dist = Math.hypot(latitude - sourceCoords[0], longitude - sourceCoords[1]);
+        if (dist > 0.005) { // ~500 meters
+          console.log('[GPS] Location shift detected while routing. Updating route...');
+          setSourceCoords(loc);
+          generateRoutesAuto(loc, destCoords);
+        }
+      }
+    };
+
+    const onLocationError = (err) => {
+      console.warn('[GPS] Error:', err.code, err.message);
+      if (!userLocation) toast.error('Waiting for GPS signal...');
+    };
+
+    // Quick initial check
+    navigator.geolocation.getCurrentPosition(onLocationSuccess, onLocationError, { enableHighAccuracy: true });
+
+    // Continuous tracking
+    const id = navigator.geolocation.watchPosition(onLocationSuccess, onLocationError, { 
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0 
+    });
+    watchIdRef.current = id;
+
     return () => {
       if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
     };
@@ -616,10 +715,11 @@ function MapNavigation() {
         </AnimatePresence>
 
         {/* Leaflet Map */}
-        <div className={`flex-1 relative w-full h-full ${!isNavigating ? 'pb-[72px]' : ''}`}>
-          <MapContainer center={mapCenter} zoom={mapZoom} style={{ height: '100%', width: '100%', zIndex: 0 }} zoomControl={false}>
+        <div className="absolute inset-0 w-full h-full">
+          <MapContainer center={mapCenter} zoom={mapZoom} className="h-full w-full" style={{ zIndex: 0 }} zoomControl={false}>
             <MapController center={mapCenter} zoom={mapZoom} activeRoute={selectedRoute} isNavigating={isNavigating} />
             <MapEvents onMapClick={handleMapClick} />
+            <MapSizeInvalidator isNavigating={isNavigating} routesCount={routes.length} selectedRouteId={selectedRoute?.id} />
             <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
 
             {showHeatmap && heatData.length > 0 && <HeatmapLayer points={heatData} />}
@@ -662,11 +762,23 @@ function MapNavigation() {
             ))}
 
             {userLocation && <Marker position={userLocation} icon={userIcon} zIndexOffset={1000} />}
-            {destCoords && <Marker position={destCoords} zIndexOffset={999} />}
+            {destCoords && (
+              <Marker position={destCoords} zIndexOffset={999}>
+                <Popup>Destination: {destQuery || 'Selected Location'}</Popup>
+              </Marker>
+            )}
 
             {/* Inactive Routes */}
             {!isNavigating && routes.filter(r => r.id !== selectedRoute?.id).map(r => (
-              <Polyline key={r.id} positions={r.coordinates} color={getRouteColor(r.type)} weight={5} opacity={0.4} dashArray="10, 15" eventHandlers={{ click: () => setSelectedRoute(r) }} />
+              <Polyline 
+                key={r.id} 
+                positions={r.coordinates} 
+                color={getRouteColor(r.type)} 
+                weight={6} 
+                opacity={0.6} 
+                dashArray="1, 12" 
+                eventHandlers={{ click: () => setSelectedRoute(r) }} 
+              />
             ))}
 
             {/* Active Route - Multi-colored Live Traffic Overlay */}

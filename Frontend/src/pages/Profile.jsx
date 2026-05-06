@@ -45,7 +45,7 @@ export default function Profile() {
     return (
       <div className="bg-surface text-on-surface min-h-screen pb-32 flex flex-col antialiased">
         <TopAppBar title="Profile" />
-        <main className="flex-1 w-full max-w-7xl mx-auto px-margin-mobile pt-stack-lg pb-stack-lg md:px-8 flex items-center justify-center">
+        <main className="flex-1 w-full max-w-md mx-auto px-margin-mobile pt-stack-lg pb-stack-lg flex items-center justify-center">
           <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full"></div>
         </main>
         <BottomNavBar />
@@ -57,7 +57,7 @@ export default function Profile() {
     <div className="bg-surface text-on-surface min-h-screen pb-32">
       <TopAppBar title="Profile" />
 
-      <main className="pt-8 md:pt-12 px-margin-mobile max-w-2xl mx-auto space-y-stack-lg">
+      <main className="pt-8 px-margin-mobile max-w-md mx-auto space-y-stack-lg">
         {/* Page Intent Title */}
         <div>
           <h2 className="text-h1 font-h1 text-on-surface">Profile</h2>

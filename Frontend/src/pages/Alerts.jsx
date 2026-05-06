@@ -11,7 +11,7 @@ export default function Alerts() {
     <div className="bg-surface text-on-surface min-h-screen pb-24 font-body-md text-body-md">
       <TopAppBar title="Alerts" />
 
-      <main className="pt-8 md:pt-12 px-margin-mobile md:px-8 max-w-3xl mx-auto flex flex-col gap-stack-lg">
+      <main className="pt-8 px-margin-mobile max-w-md mx-auto flex flex-col gap-stack-lg">
         <header>
           <h2 className="text-h1 font-h1 text-on-surface mb-stack-sm">Alerts &amp; Notifications</h2>
           <p className="text-body-lg font-body-lg text-on-surface-variant">Stay informed about your route.</p>

@@ -8,21 +8,41 @@ const { protect } = require('../middleware/authMiddleware');
 // Helpers for ORS
 const getOrsKey = () => process.env.ORS_API_KEY || '5b3ce3597851110001cf6248c8dfa8910b0e457caee46cfbe694c979';
 
+const getReportCoords = (report) => {
+  const lat = Number(report.latitude ?? report.gps?.lat);
+  const lng = Number(report.longitude ?? report.gps?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+};
+
+const reportToMapMarker = (report) => {
+  const coords = getReportCoords(report);
+  if (!coords) return null;
+
+  return {
+    id: report._id,
+    lat: coords.lat,
+    lng: coords.lng,
+    severity: report.severity || 'Medium',
+    confidence: report.confidence || 0,
+    imageUrl: report.imageUrl,
+    location: report.location || `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`,
+    description: report.description || '',
+    status: report.status,
+    createdAt: report.createdAt,
+    type: 'pothole'
+  };
+};
+
 // @route   GET /api/maps/markers
 router.get('/markers', async (req, res) => {
   try {
-    const reports = await Report.find({ status: { $ne: 'Resolved' } });
-    const markers = reports.map(r => ({
-      id: r._id,
-      lat: r.latitude || r.gps?.lat,
-      lng: r.longitude || r.gps?.lng,
-      severity: r.severity,
-      confidence: r.confidence,
-      imageUrl: r.imageUrl,
-      location: r.location,
-      createdAt: r.createdAt,
-      type: 'pothole'
-    })).filter(m => m.lat && m.lng);
+    const reports = await Report.find({
+      status: { $ne: 'Resolved' },
+      severity: { $ne: 'None' }
+    }).sort({ createdAt: -1 });
+
+    const markers = reports.map(reportToMapMarker).filter(Boolean);
     res.json(markers);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -32,17 +52,20 @@ router.get('/markers', async (req, res) => {
 // @route   GET /api/maps/heatmap
 router.get('/heatmap', async (req, res) => {
   try {
-    const reports = await Report.find({ status: { $ne: 'Resolved' } });
+    const reports = await Report.find({
+      status: { $ne: 'Resolved' },
+      severity: { $ne: 'None' }
+    });
     const heatData = reports.map(r => {
-      const lat = r.latitude || r.gps?.lat;
-      const lng = r.longitude || r.gps?.lng;
+      const coords = getReportCoords(r);
+      if (!coords) return null;
       let intensity = 0.5;
       if (r.severity === 'Critical') intensity = 1.0;
       else if (r.severity === 'High') intensity = 0.8;
       else if (r.severity === 'Medium') intensity = 0.5;
       else if (r.severity === 'Low') intensity = 0.3;
-      return [lat, lng, intensity];
-    }).filter(m => m[0] && m[1]);
+      return [coords.lat, coords.lng, intensity];
+    }).filter(Boolean);
     res.json(heatData);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -118,12 +141,14 @@ router.post('/routes', async (req, res) => {
     }
 
     // 3. Fetch all active hazards for scoring
-    const reports = await Report.find({ status: { $ne: 'Resolved' } });
+    const reports = await Report.find({
+      status: { $ne: 'Resolved' },
+      severity: { $ne: 'None' }
+    });
     const hazards = reports.map(r => ({
-      lat: r.latitude || r.gps?.lat,
-      lng: r.longitude || r.gps?.lng,
+      ...getReportCoords(r),
       severity: r.severity
-    })).filter(h => h.lat && h.lng);
+    })).filter(h => Number.isFinite(h.lat) && Number.isFinite(h.lng));
 
     const generatedRoutes = resp.data.routes.map((routeData, index) => {
       const coordinates = routeData.geometry.coordinates.map(c => [c[1], c[0]]); 

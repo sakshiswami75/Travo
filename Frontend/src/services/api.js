@@ -58,4 +58,12 @@ export const reportService = {
   getReports: () => api.get('/reports'),
 };
 
+export const complaintService = {
+  createComplaint: (formData) =>
+    api.post('/complaints', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  getComplaints: () => api.get('/complaints'),
+};
+
 export default api;

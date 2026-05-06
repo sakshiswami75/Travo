@@ -4,6 +4,7 @@ const multer = require('multer');
 const axios = require('axios');
 const fs = require('fs');
 const Report = require('../models/Report');
+const User = require('../models/User');
 const { protect } = require('../middleware/authMiddleware');
 
 // ─── Multer ───────────────────────────────────────────────────────────────────
@@ -128,23 +129,32 @@ const detectWithGroq = async (imageBuffer) => {
         messages: [
           {
             role: 'system',
-            content: `You are a high-precision road hazard inspector. 
-            Your task is to identify potholes, cracks, and road erosion. 
-            Be extremely observant of depth and size.
-            If you see any significant indentation in the road, mark detected: true.
-            Provide a hazard_score from 1-10 where:
-            1-3: Low risk (surface cracks)
-            4-6: Medium risk (moderate potholes)
-            7-8: High risk (large potholes/damage)
-            9-10: Critical risk (massive holes/road failure)`
+            content: `You are a professional Civil Engineer specialized in road safety and pavement assessment.
+            Your task is to analyze road images for hazards like potholes, structural cracks, and erosion.
+            
+            SCORING RUBRIC (Hazard Score 1-10):
+            - 1-3 (LOW): Hairline cracks, minor surface wear, or very shallow depressions (under 1 inch deep). No immediate risk.
+            - 4-6 (MEDIUM): Distinct potholes or cracks. Depth 1-3 inches. Noticeable shadows inside. Requires caution but not immediate swerving.
+            - 7-8 (HIGH): Deep, wide potholes (3+ inches deep, 12+ inches wide). Sharp edges that can damage tires or suspension. High risk at normal speeds.
+            - 9-10 (CRITICAL): Massive road failure, sinkholes, or deep pits spanning most of the lane. Extreme danger. Immediate intervention required.
+            
+            Strictly evaluate based on the potential impact on a standard sedan car.`
           },
           {
             role: 'user',
             content: [
               {
                 type: 'text',
-                text: `Analyze this image for road hazards. Respond strictly in JSON:
-                {"detected": boolean, "isRoad": boolean, "hazard_score": 1-10, "label": string, "description": string}`
+                text: `Examine this road image. Is there a hazard? If yes, what is its severity?
+                Respond strictly in this JSON format:
+                {
+                  "detected": boolean,
+                  "isRoad": boolean,
+                  "hazard_score": integer (1-10),
+                  "confidence": integer (0-100),
+                  "label": "pothole" | "crack" | "erosion" | "none",
+                  "description": "Brief technical explanation of why you gave this score"
+                }`
               },
               {
                 type: 'image_url',
@@ -174,7 +184,7 @@ const detectWithGroq = async (imageBuffer) => {
         detected: result.detected === true,
         isRoad: result.isRoad !== false, // Default to true unless explicitly false
         severity: calculatedSeverity,
-        confidence: result.confidence || (score * 10), // Synthetic confidence if missing
+        confidence: result.confidence || (score > 0 ? score * 10 : 0), 
         label: result.label || 'hazard',
         description: result.description || ''
       };
@@ -184,7 +194,7 @@ const detectWithGroq = async (imageBuffer) => {
       return {
         ...normalized,
         method: `groq-${modelId.split('/').pop()}`,
-        severity: normalized.detected ? normalized.severity : null
+        severity: normalized.detected ? normalized.severity : 'None'
       };
 
     } catch (err) {
@@ -236,7 +246,7 @@ const detectPothole = async (imageBuffer) => {
         isRoad: false,
         label: 'not a road image',
         confidence: 0,
-        severity: null,
+        severity: 'None',
         notRoadError: `This does not appear to be a road photo. It looks like a ${top.label}.`
       };
     }
@@ -264,7 +274,7 @@ const detectPothole = async (imageBuffer) => {
     isRoad: true,
     label: detected ? 'hazard detected' : 'clear road',
     confidence: rawConf,
-    severity: detected ? getSeverity(rawConf) : null,
+    severity: detected ? getSeverity(rawConf) : 'None',
     method: 'vit-classification-fallback'
   };
 };
@@ -343,14 +353,25 @@ router.post('/create', protect, async (req, res) => {
     return res.status(400).json({ message: 'imageUrl, latitude, and longitude are required' });
   }
 
+  const lat = parseFloat(latitude);
+  const lng = parseFloat(longitude);
+
+  if (isNaN(lat) || isNaN(lng)) {
+    return res.status(400).json({ message: 'Invalid GPS coordinates provided' });
+  }
+
   try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'User context missing. Please re-login.' });
+    }
+    
     const report = await Report.create({
-      user: req.user.id,
+      user: req.user._id,
       imageUrl,
       imagePublicId: imagePublicId || '',
       location: location || 'Unknown location',
-      latitude: parseFloat(latitude),
-      longitude: parseFloat(longitude),
+      latitude: lat,
+      longitude: lng,
       severity: severity || 'Medium',
       confidence: confidence || 0,
       aiDetectionResult: aiDetectionResult || {},
@@ -358,12 +379,33 @@ router.post('/create', protect, async (req, res) => {
       status: 'Pending'
     });
 
-    console.log(`[REPORTS] Saved: ${report._id} | severity=${report.severity}`);
+    // Calculate points based on severity
+    let pointsEarned = 50; // Default
+    if (severity === 'Critical') pointsEarned = 100;
+    else if (severity === 'High') pointsEarned = 75;
+    else if (severity === 'Low') pointsEarned = 25;
+    else if (severity === 'None') pointsEarned = 10;
+
+    // Update user points and total reports
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $inc: { points: pointsEarned, totalReports: 1 } },
+      { new: true }
+    );
+
+    console.log(`[REPORTS] Saved: ${report._id} | User ${req.user?._id} earned ${pointsEarned} pts (Total: ${updatedUser?.points || '?'})`);
+    
     res.status(201).json({
       message: 'Report submitted successfully',
       reportId: report._id,
       severity: report.severity,
-      status: report.status
+      status: report.status,
+      latitude: report.latitude,
+      longitude: report.longitude,
+      location: report.location,
+      imageUrl: report.imageUrl,
+      pointsEarned,
+      totalPoints: updatedUser?.points || 0
     });
 
   } catch (err) {
@@ -375,7 +417,7 @@ router.post('/create', protect, async (req, res) => {
 // ─── GET /api/reports ─────────────────────────────────────────────────────────
 router.get('/', protect, async (req, res) => {
   try {
-    const reports = await Report.find({ user: req.user.id }).sort({ createdAt: -1 });
+    const reports = await Report.find({ user: req.user._id }).sort({ createdAt: -1 });
     res.json(reports);
   } catch (err) {
     res.status(500).json({ message: err.message });

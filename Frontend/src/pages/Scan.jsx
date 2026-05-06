@@ -34,6 +34,8 @@ export default function Scan() {
   const [cloudinaryUrl, setCloudinaryUrl] = useState(null);
   const [cloudinaryPublicId, setCloudinaryPublicId] = useState(null);
   const [aiResult, setAiResult] = useState(null);
+  const [pointsEarned, setPointsEarned] = useState(0);
+  const [submittedReport, setSubmittedReport] = useState(null);
 
   // GPS state
   const [gps, setGps] = useState(null);
@@ -43,25 +45,38 @@ export default function Scan() {
   // ── GPS capture ──────────────────────────────────────────────────────────
   const captureGPS = useCallback(() => {
     if (!navigator.geolocation) {
-      setGpsError('Geolocation not supported by this browser');
-      return;
+      const message = 'Live location is not supported by this browser';
+      setGpsError(message);
+      return Promise.reject(new Error(message));
     }
+
     setGpsLoading(true);
     setGpsError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
-        setGpsLoading(false);
-      },
-      (err) => {
-        console.warn('GPS error:', err.message);
-        setGpsError('Location access denied. Using approximate coordinates.');
-        // Use a default location as fallback so the form can still submit
-        setGps({ lat: 19.0760, lng: 72.8777, accuracy: 9999, fallback: true });
-        setGpsLoading(false);
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
+
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const liveLocation = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            capturedAt: Date.now()
+          };
+          setGps(liveLocation);
+          setGpsLoading(false);
+          resolve(liveLocation);
+        },
+        (err) => {
+          console.warn('GPS error:', err.message);
+          const message = 'Please allow live location access to submit this pothole report.';
+          setGps(null);
+          setGpsError(message);
+          setGpsLoading(false);
+          reject(new Error(message));
+        },
+        { timeout: 15000, maximumAge: 0, enableHighAccuracy: true }
+      );
+    });
   }, []);
 
   // ── File selection handler ───────────────────────────────────────────────
@@ -86,8 +101,8 @@ export default function Scan() {
     setCloudinaryUrl(null);
     setStep('preview');
 
-    // Kick off GPS capture
-    captureGPS();
+    // Kick off live GPS capture early so it is ready before submission.
+    captureGPS().catch(() => {});
   };
 
   // ── Unified Analysis Flow ───────────────────────────────────────────────
@@ -138,30 +153,40 @@ export default function Scan() {
       toast.error('Cannot submit: Invalid road image');
       return;
     }
-    if (!gps) {
-      toast.error('Fetching GPS location...');
-      return;
-    }
-
     setSubmitting(true);
     try {
+      toast.loading('Fetching live location...', { id: 'gps' });
+      const liveGps = await captureGPS();
+      toast.success('Live location attached', { id: 'gps' });
+
       const payload = {
         imageUrl: cloudinaryUrl,
         imagePublicId: cloudinaryPublicId || '',
-        latitude: gps.lat,
-        longitude: gps.lng,
-        location: gps.fallback ? 'Mumbai, India (approximate)' : `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}`,
+        latitude: liveGps.lat,
+        longitude: liveGps.lng,
+        location: `${liveGps.lat.toFixed(4)}, ${liveGps.lng.toFixed(4)}`,
         severity: aiResult?.severity || 'Medium',
         confidence: aiResult?.confidence || 0,
         aiDetectionResult: aiResult || {},
         description,
       };
 
-      await reportService.createReport(payload);
+      const res = await reportService.createReport(payload);
+      setPointsEarned(res.data.pointsEarned || 50);
+      setSubmittedReport({
+        id: res.data.reportId,
+        lat: res.data.latitude ?? liveGps.lat,
+        lng: res.data.longitude ?? liveGps.lng,
+        severity: res.data.severity || payload.severity,
+        location: res.data.location || payload.location,
+      });
       toast.success('Report submitted successfully!');
       setStep('success');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Submission failed');
+      console.error('[SCAN] Submit error detail:', err);
+      const msg = err.response?.data?.message || err.message || 'Submission failed';
+      toast.dismiss('gps');
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -176,8 +201,10 @@ export default function Scan() {
     setCloudinaryUrl(null);
     setCloudinaryPublicId(null);
     setAiResult(null);
+    setSubmittedReport(null);
     setGps(null);
     setUploadProgress(0);
+    setPointsEarned(0);
   };
 
   const severity = aiResult?.severity || (aiResult?.detected ? 'Medium' : 'None');
@@ -368,7 +395,7 @@ export default function Scan() {
 
           {/* GPS Location */}
           <div className="mb-4">
-            <label className="text-label-bold font-bold text-on-surface block mb-2 uppercase tracking-wider text-xs">Current Location</label>
+            <label className="text-label-bold font-bold text-on-surface block mb-2 uppercase tracking-wider text-xs">Live Location Required</label>
             <div className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-3 flex items-center gap-3 shadow-sm">
               <span className="material-symbols-outlined text-primary shrink-0" style={{ fontVariationSettings: gps ? "'FILL' 1" : "'FILL' 0" }}>location_on</span>
               <div className="flex-1 min-w-0">
@@ -377,14 +404,14 @@ export default function Scan() {
                 ) : gps ? (
                   <>
                     <p className="text-body-md text-on-surface font-medium truncate">
-                      {gps.fallback ? 'Mumbai, India (approximate)' : `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`}
+                      {`${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`}
                     </p>
                     <p className="text-caption text-on-surface-variant">
-                      GPS Accuracy: {gps.accuracy === 9999 ? 'Approximate' : `±${Math.round(gps.accuracy)}m`}
+                      GPS Accuracy: +/-{Math.round(gps.accuracy)}m
                     </p>
                   </>
                 ) : (
-                  <p className="text-body-sm text-on-surface-variant">{gpsError || 'Location not captured'}</p>
+                  <p className="text-body-sm text-on-surface-variant">{gpsError || 'Location not captured yet'}</p>
                 )}
               </div>
               {!gpsLoading && (
@@ -444,13 +471,13 @@ export default function Scan() {
             {aiResult && !isNotRoad && (
               <button
                 onClick={handleSubmit}
-                disabled={submitting}
+                disabled={submitting || gpsLoading}
                 className="w-full bg-primary text-on-primary h-[56px] rounded-full font-label-bold text-lg shadow-[0_4px_14px_rgba(124,58,237,0.39)] hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {submitting ? (
                   <>
                     <div className="w-5 h-5 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
-                    Submitting...
+                    {gpsLoading ? 'Fetching location...' : 'Submitting...'}
                   </>
                 ) : (
                   <>
@@ -473,7 +500,7 @@ export default function Scan() {
 
           <h2 className="text-h1 font-h1 text-on-surface text-center mb-2">Report Submitted!</h2>
           <p className="text-body-md text-on-surface-variant text-center mb-6 px-4">
-            You've earned <strong className="text-primary">+50 points</strong> for keeping the roads safe.
+            You've earned <strong className="text-primary">+{pointsEarned} points</strong> for keeping the roads safe.
           </p>
 
           {/* Report Summary Card */}
@@ -501,7 +528,7 @@ export default function Scan() {
               <div>
                 <p className="text-[11px] text-on-surface-variant uppercase tracking-wider mb-1">Location</p>
                 <p className="text-body-sm text-on-surface">
-                  {gps ? (gps.fallback ? 'Mumbai, India (approximate)' : `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}`) : 'Unknown'}
+                  {gps ? `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}` : 'Unknown'}
                 </p>
               </div>
 
@@ -528,6 +555,22 @@ export default function Scan() {
           </div>
 
           <div className="w-full flex flex-col gap-3">
+            <button
+              onClick={() => navigate('/map', {
+                state: {
+                  focusReport: submittedReport || (gps ? {
+                    lat: gps.lat,
+                    lng: gps.lng,
+                    severity,
+                    location: `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}`
+                  } : null)
+                }
+              })}
+              className="w-full bg-primary text-on-primary h-[56px] rounded-full font-label-bold shadow-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+            >
+              View on Map
+              <span className="material-symbols-outlined text-sm">map</span>
+            </button>
             <button
               onClick={handleReset}
               className="w-full bg-primary-container text-on-primary-container h-[56px] rounded-full font-label-bold shadow-sm hover:opacity-90 transition-opacity"

@@ -48,7 +48,7 @@ export default function Home() {
     return (
       <div className="bg-background text-on-background min-h-screen font-body-md pb-32 flex flex-col antialiased">
         <TopAppBar />
-        <main className="flex-1 w-full max-w-7xl mx-auto px-margin-mobile pt-stack-lg pb-stack-lg md:px-8 flex items-center justify-center">
+        <main className="flex-1 w-full max-w-md mx-auto px-margin-mobile pt-stack-lg pb-stack-lg flex items-center justify-center">
           <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full"></div>
         </main>
         <BottomNavBar />
@@ -60,7 +60,7 @@ export default function Home() {
     return (
       <div className="bg-background text-on-background min-h-screen font-body-md pb-32 flex flex-col antialiased">
         <TopAppBar />
-        <main className="flex-1 w-full max-w-7xl mx-auto px-margin-mobile pt-stack-lg pb-stack-lg md:px-8 text-center text-error">
+        <main className="flex-1 w-full max-w-md mx-auto px-margin-mobile pt-stack-lg pb-stack-lg text-center text-error">
           <p>{error}</p>
         </main>
         <BottomNavBar />
@@ -72,7 +72,7 @@ export default function Home() {
     <div className="bg-background text-on-background min-h-screen font-body-md pb-32 flex flex-col antialiased">
       <TopAppBar />
       
-      <main className="flex-1 w-full max-w-7xl mx-auto px-margin-mobile pt-stack-lg pb-stack-lg md:px-8 space-y-stack-lg">
+      <main className="flex-1 w-full max-w-md mx-auto px-margin-mobile pt-stack-lg pb-stack-lg space-y-stack-lg">
         {/* Greeting & Date */}
         <section className="mb-stack-lg">
           <h2 className="text-h1 font-h1 text-on-surface">Hello, {dashboard?.name.split(' ')[0]}</h2>

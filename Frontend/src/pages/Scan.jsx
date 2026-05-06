@@ -65,7 +65,7 @@ export default function Scan() {
   }, []);
 
   // ── File selection handler ───────────────────────────────────────────────
-  const handleFileSelected = async (file) => {
+  const handleFileSelected = (file) => {
     if (!file) return;
 
     // Validate type
@@ -84,105 +84,62 @@ export default function Scan() {
     setPreviewUrl(URL.createObjectURL(file));
     setAiResult(null);
     setCloudinaryUrl(null);
-
-    // Kick off GPS capture immediately
-    captureGPS();
-
-    // Upload to Cloudinary
-    await uploadToCloudinary(file);
-  };
-
-  // ── Upload to Cloudinary ─────────────────────────────────────────────────
-  const uploadToCloudinary = async (file) => {
-    setUploading(true);
-    setUploadProgress(0);
     setStep('preview');
 
-    // Simulate progress ticks
+    // Kick off GPS capture
+    captureGPS();
+  };
+
+  // ── Unified Analysis Flow ───────────────────────────────────────────────
+  const handleAnalyze = async () => {
+    if (!selectedFile) return;
+    
+    setUploading(true);
+    setUploadProgress(0);
+
     const progressInterval = setInterval(() => {
       setUploadProgress(p => Math.min(p + 12, 85));
     }, 300);
 
     try {
+      // 1. Upload
       const formData = new FormData();
-      formData.append('image', file);
-
-      const res = await reportService.uploadImage(formData);
+      formData.append('image', selectedFile);
+      const uploadRes = await reportService.uploadImage(formData);
+      
       clearInterval(progressInterval);
       setUploadProgress(100);
-      setCloudinaryUrl(res.data.imageUrl);
-      setCloudinaryPublicId(res.data.publicId);
-      toast.success('Image uploaded!');
+      setCloudinaryUrl(uploadRes.data.imageUrl);
+      setCloudinaryPublicId(uploadRes.data.publicId);
 
-      // Auto-run AI detection — send the actual file for real pixel analysis
-      await runAiDetection(res.data.imageUrl, file);
+      // 2. AI Detection
+      setDetecting(true);
+      const detectRes = await reportService.detectFile(formData);
+      setAiResult(detectRes.data);
+
     } catch (err) {
       clearInterval(progressInterval);
-      const msg = err.response?.data?.message || 'Upload failed';
+      const msg = err.response?.data?.message || 'Process failed';
       toast.error(msg);
-      console.error('[SCAN] Upload error:', err);
-      setStep('select');
+      console.error('[SCAN] Analysis error:', err);
     } finally {
       setUploading(false);
-    }
-  };
-
-  // ── HuggingFace YOLOS Pothole Detection ──────────────────────────────────
-  const runAiDetection = async (imageUrl, file) => {
-    setDetecting(true);
-    try {
-      let res;
-
-      if (file) {
-        // Send actual image bytes to HuggingFace model
-        const formData = new FormData();
-        formData.append('image', file);
-        res = await reportService.detectFile(formData);
-      } else {
-        res = await reportService.detectHazard(imageUrl);
-      }
-
-      const data = res.data;
-
-      // Only reset if confirmed non-road image (not a tech error)
-      if (data.notRoadError && data.isRoad === false) {
-        toast.error(data.notRoadError, { duration: 5000 });
-        setStep('select');
-        setSelectedFile(null);
-        setPreviewUrl(null);
-        setCloudinaryUrl(null);
-        setCloudinaryPublicId(null);
-        setAiResult(null);
-        return;
-      }
-
-      setAiResult(data);
-
-      if (data.warning) {
-        toast(data.warning, { icon: '⚠️', duration: 4000 });
-      } else if (data.detected) {
-        const plural = data.count > 1 ? `${data.count} potholes` : '1 pothole';
-        toast.success(`🚨 ${data.detected ? plural + ' detected' : 'No pothole'}! ${data.confidence}% — ${data.severity}`);
-      } else {
-        toast('🛣️ No pothole detected in this photo', { duration: 4000 });
-      }
-
-    } catch (err) {
-      console.error('[SCAN] AI detection error:', err);
-      setAiResult({ detected: false, label: 'Detection error', confidence: 0, severity: 'Medium', method: 'error' });
-    } finally {
       setDetecting(false);
     }
   };
 
   // ── Submit final report ──────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!cloudinaryUrl) {
-      toast.error('Image upload is not complete yet');
+    if (!cloudinaryUrl || !aiResult) {
+      toast.error('Please analyze the image first');
+      return;
+    }
+    if (aiResult.isRoad === false) {
+      toast.error('Cannot submit: Invalid road image');
       return;
     }
     if (!gps) {
-      toast.error('Still fetching your GPS location, please wait...');
+      toast.error('Fetching GPS location...');
       return;
     }
 
@@ -201,12 +158,10 @@ export default function Scan() {
       };
 
       await reportService.createReport(payload);
-      toast.success('Report saved to database!');
+      toast.success('Report submitted successfully!');
       setStep('success');
     } catch (err) {
-      const msg = err.response?.data?.message || 'Failed to submit report';
-      toast.error(msg);
-      console.error('[SCAN] Submit error:', err);
+      toast.error(err.response?.data?.message || 'Submission failed');
     } finally {
       setSubmitting(false);
     }
@@ -222,14 +177,17 @@ export default function Scan() {
     setCloudinaryPublicId(null);
     setAiResult(null);
     setGps(null);
-    setGpsError(null);
     setUploadProgress(0);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
 
-  const severity = aiResult?.severity || 'Medium';
-  const severityConfig = SEVERITY_CONFIG[severity] || SEVERITY_CONFIG.Medium;
+  const severity = aiResult?.severity || (aiResult?.detected ? 'Medium' : 'None');
+  
+  // Custom config for "Not a Road" state
+  const isNotRoad = aiResult?.isRoad === false;
+  
+  const severityConfig = isNotRoad 
+    ? { color: 'bg-error-container text-error', icon: 'block', dot: 'bg-error', label: aiResult.notRoadError || 'Invalid image.' }
+    : SEVERITY_CONFIG[severity] || { color: 'bg-secondary-container/20 text-secondary', icon: 'check_circle', dot: 'bg-secondary', label: 'Ready to analyze.' };
 
   return (
     <div className="bg-background text-on-background font-body-md min-h-screen flex flex-col relative antialiased">
@@ -237,7 +195,7 @@ export default function Scan() {
 
       {/* ── SELECT IMAGE STEP ─────────────────────────────────────────── */}
       {step === 'select' && (
-        <main className="flex-grow w-full max-w-2xl mx-auto p-margin-mobile flex flex-col pt-8 pb-32">
+        <main className="flex-grow w-full max-w-md mx-auto p-margin-mobile flex flex-col pt-8 pb-32">
           {/* Header */}
           <div className="mb-stack-lg">
             <h2 className="text-h1 font-h1 text-on-surface mb-2">Report Hazard</h2>
@@ -301,7 +259,7 @@ export default function Scan() {
 
       {/* ── PREVIEW / ANALYZE STEP ────────────────────────────────────── */}
       {step === 'preview' && (
-        <main className="flex-grow w-full max-w-2xl mx-auto p-margin-mobile flex flex-col pt-8 pb-32">
+        <main className="flex-grow w-full max-w-md mx-auto p-margin-mobile flex flex-col pt-8 pb-32">
           {/* Header & Back */}
           <div className="flex items-center gap-4 mb-stack-lg">
             <button onClick={handleReset} className="w-10 h-10 bg-surface-container rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors">
@@ -375,12 +333,12 @@ export default function Scan() {
                   <div className="z-10 flex-1">
                     <h4 className="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest mb-0.5">AI Severity Analysis</h4>
                     <p className="text-h3 font-h3 text-on-surface flex items-center gap-2">
-                      {severity} Risk
+                      {isNotRoad ? 'Invalid Image' : (aiResult.detected ? `${severity} Risk` : 'Safe / Low Risk')}
                       {aiResult.confidence > 0 && (
                         <span className="text-body-sm font-normal text-on-surface-variant">({aiResult.confidence}% confidence)</span>
                       )}
                     </p>
-                    <p className="text-body-sm text-on-surface-variant mt-1">{severityConfig.label}</p>
+                    <p className="text-body-sm text-on-surface-variant mt-1">{aiResult.detected ? severityConfig.label : 'Road surface appears clear of major hazards.'}</p>
                     {aiResult.detected && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         <div className="inline-flex items-center gap-1 bg-error-container/40 text-error px-2 py-0.5 rounded-full text-[11px] font-bold">
@@ -395,10 +353,10 @@ export default function Scan() {
                         )}
                       </div>
                     )}
-                    {!aiResult.detected && aiResult.method === 'yolos-pothole-model' && (
+                    {!aiResult.detected && (
                       <div className="mt-2 inline-flex items-center gap-1 bg-secondary-container/40 text-secondary px-2 py-0.5 rounded-full text-[11px] font-medium">
                         <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                        No pothole found — clear road
+                        No significant hazard found
                       </div>
                     )}
 
@@ -451,28 +409,58 @@ export default function Scan() {
             />
           </div>
 
-          {/* Submit Button */}
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || uploading || detecting || !cloudinaryUrl}
-            className="w-full bg-primary text-on-primary h-[56px] rounded-full font-label-bold text-lg shadow-[0_4px_14px_rgba(124,58,237,0.39)] hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {submitting ? (
-              <>
-                <div className="w-5 h-5 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
-                Saving Report...
-              </>
-            ) : uploading ? (
-              'Uploading Image...'
-            ) : detecting ? (
-              'AI Analyzing...'
-            ) : (
-              <>
-                Submit Report
-                <span className="material-symbols-outlined text-sm">send</span>
-              </>
+          {/* Action Buttons */}
+          <div className="flex flex-col gap-3">
+            {!aiResult && !uploading && !detecting && (
+              <button
+                onClick={handleAnalyze}
+                className="w-full bg-secondary text-on-secondary h-[56px] rounded-full font-label-bold text-lg shadow-md hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+              >
+                Analyze Image
+                <span className="material-symbols-outlined">psychology</span>
+              </button>
             )}
-          </button>
+
+            {(uploading || detecting) && (
+              <button
+                disabled
+                className="w-full bg-surface-container-high text-on-surface-variant h-[56px] rounded-full font-label-bold text-lg flex items-center justify-center gap-3 animate-pulse"
+              >
+                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                {uploading ? `Uploading... ${uploadProgress}%` : 'AI Analyzing...'}
+              </button>
+            )}
+
+            {aiResult && isNotRoad && (
+              <button
+                onClick={handleReset}
+                className="w-full bg-error text-on-error h-[56px] rounded-full font-label-bold text-lg shadow-md hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+              >
+                Re-upload Photo
+                <span className="material-symbols-outlined">restart_alt</span>
+              </button>
+            )}
+
+            {aiResult && !isNotRoad && (
+              <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="w-full bg-primary text-on-primary h-[56px] rounded-full font-label-bold text-lg shadow-[0_4px_14px_rgba(124,58,237,0.39)] hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {submitting ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    Submit Report
+                    <span className="material-symbols-outlined text-sm">send</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </main>
       )}
 

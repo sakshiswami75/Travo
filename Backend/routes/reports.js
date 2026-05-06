@@ -100,115 +100,172 @@ const classifyLabel = (label) => {
   return 'unknown'; // Ambiguous — don't reject
 };
 
-// ─── AI Detection using ViT + scoring ────────────────────────────────────────
-const detectPothole = async (imageBuffer) => {
+const Groq = require('groq-sdk');
+
+// ─── Groq Vision helper ──────────────────────────────────────────────────────
+const detectWithGroq = async (imageBuffer) => {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || apiKey.startsWith('gsk_your')) {
+    console.warn('[AI] GROQ_API_KEY not configured, falling back to ViT');
+    return null;
+  }
+
+  const groq = new Groq({ apiKey });
   const b64 = imageBuffer.toString('base64');
 
+  // Sequence of models to try. We prioritize the latest active vision models.
+  const MODELS_TO_TRY = [
+    'meta-llama/llama-4-scout-17b-16e-instruct',
+    'llama-3.2-11b-vision-preview'
+  ];
+
+  let lastError = null;
+
+  for (const modelId of MODELS_TO_TRY) {
+    console.log(`[AI] Attempting Groq Vision analysis with: ${modelId}`);
+    try {
+      const chatCompletion = await groq.chat.completions.create({
+        messages: [
+          {
+            role: 'system',
+            content: `You are a high-precision road hazard inspector. 
+            Your task is to identify potholes, cracks, and road erosion. 
+            Be extremely observant of depth and size.
+            If you see any significant indentation in the road, mark detected: true.
+            Provide a hazard_score from 1-10 where:
+            1-3: Low risk (surface cracks)
+            4-6: Medium risk (moderate potholes)
+            7-8: High risk (large potholes/damage)
+            9-10: Critical risk (massive holes/road failure)`
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `Analyze this image for road hazards. Respond strictly in JSON:
+                {"detected": boolean, "isRoad": boolean, "hazard_score": 1-10, "label": string, "description": string}`
+              },
+              {
+                type: 'image_url',
+                image_url: { url: `data:image/jpeg;base64,${b64}` }
+              }
+            ]
+          }
+        ],
+        model: modelId,
+        response_format: { type: 'json_object' },
+        temperature: 0, // Zero temperature for more consistent classification
+      });
+
+      const rawContent = chatCompletion.choices[0].message.content;
+      console.log(`[AI] Groq Raw Content from ${modelId}:`, rawContent);
+      
+      const result = JSON.parse(rawContent);
+      
+      // Map hazard score to severity labels
+      const score = result.hazard_score || 0;
+      let calculatedSeverity = 'Low';
+      if (score >= 9) calculatedSeverity = 'Critical';
+      else if (score >= 7) calculatedSeverity = 'High';
+      else if (score >= 4) calculatedSeverity = 'Medium';
+
+      const normalized = {
+        detected: result.detected === true,
+        isRoad: result.isRoad !== false, // Default to true unless explicitly false
+        severity: calculatedSeverity,
+        confidence: result.confidence || (score * 10), // Synthetic confidence if missing
+        label: result.label || 'hazard',
+        description: result.description || ''
+      };
+
+      console.log(`[AI] Groq SUCCESS: ${normalized.label} (Score: ${score} -> ${normalized.severity} Risk)`);
+
+      return {
+        ...normalized,
+        method: `groq-${modelId.split('/').pop()}`,
+        severity: normalized.detected ? normalized.severity : null
+      };
+
+    } catch (err) {
+      lastError = err;
+      console.warn(`[AI] Groq failed with ${modelId}:`, err.message);
+      if (err.message.includes('decommissioned') || err.message.includes('not_found')) {
+        continue;
+      }
+      break; 
+    }
+  }
+
+  console.error('[AI] All Groq models failed. Last error:', lastError?.message);
+  return null;
+};
+
+// ─── AI Detection using ViT (Fallback) ───────────────────────────────────────
+const detectPothole = async (imageBuffer) => {
+  // First try Groq
+  const groqResult = await detectWithGroq(imageBuffer);
+  if (groqResult) {
+    // If not a road image, provide the detailed error
+    if (groqResult.isRoad === false) {
+      return {
+        ...groqResult,
+        notRoadError: `This looks like ${groqResult.description || 'a non-road image'}. Please upload a clear photo of a road hazard.`
+      };
+    }
+    return groqResult;
+  }
+
+  // Fallback to ViT
+  const b64 = imageBuffer.toString('base64');
   let classifications = [];
   try {
     const res = await hfPost('google/vit-base-patch16-224', { inputs: b64 });
     classifications = Array.isArray(res.data) ? res.data : [];
-    console.log('[AI] ViT top labels:', classifications.slice(0, 3).map(c => `${c.label}(${(c.score * 100).toFixed(1)}%)`).join(', '));
   } catch (err) {
     console.warn('[AI] ViT call failed:', err.message);
-    // Can't classify — proceed to pixel analysis fallback
   }
 
-  // ── Stage 1: Reject clearly non-road images ─────────────────────────────
+  // Stage 1: Reject clearly non-road images
   if (classifications.length > 0) {
     const top = classifications[0];
     const verdict = classifyLabel(top.label);
-
     if (verdict === 'non-road' && top.score > 0.50) {
-      const label = top.label.toLowerCase();
-      let reason = 'This does not appear to be a road or pavement photo.';
-      if (label.match(/person|face|people|human/)) reason = 'This looks like a photo of a person, not a road hazard.';
-      else if (label.match(/food|pizza|burger|meal|plate|bowl/)) reason = 'This looks like a food photo, not a road hazard.';
-      else if (label.match(/dog|cat|bird|animal|pet/)) reason = 'This looks like an animal photo, not a road hazard.';
-      else if (label.match(/flower|plant|tree|grass|garden|forest/)) reason = 'This looks like a nature photo, not a road hazard.';
-      else if (label.match(/sky|cloud|ocean|beach|water|lake/)) reason = 'This looks like a scenery photo, not a road hazard.';
-      else if (label.match(/bedroom|kitchen|bathroom|living|room|office/)) reason = 'This looks like an indoor photo, not a road hazard.';
-
-      console.log(`[AI] REJECTED — non-road image: "${top.label}" (${(top.score * 100).toFixed(1)}%)`);
       return {
         detected: false,
         isRoad: false,
         label: 'not a road image',
         confidence: 0,
         severity: null,
-        notRoadError: `${reason} Please upload a clear photo of a road hazard (pothole, crack, or road damage).`
+        notRoadError: `This does not appear to be a road photo. It looks like a ${top.label}.`
       };
     }
   }
 
-  // ── Stage 2: Pothole likelihood from ViT labels ─────────────────────────
-  // Score based on how road/pothole-like the top labels are
+  // Stage 2: Pothole likelihood
   let potholeScore = 0;
-  let isRoadContext = false;
-
   for (const cls of classifications.slice(0, 5)) {
     const lower = cls.label.toLowerCase();
     const score = cls.score;
-
-    // High pothole indicators (depression, rough terrain, dark void)
-    if (lower.match(/valley|vale|cliff|depression|pit|hole|crater|gravel|rubble|debris/)) {
-      potholeScore += score * 80;
-      isRoadContext = true;
-    }
-    // Road context without pothole
-    else if (lower.match(/road|highway|pavement|street|asphalt|concrete|sidewalk|parking|runway/)) {
-      potholeScore += score * 20;
-      isRoadContext = true;
-    }
-    // Vehicle context = road context
-    else if (lower.match(/car|truck|bus|vehicle|automobile|traffic/)) {
+    // Keywords that might indicate a pothole or road hazard in a general ImageNet model
+    if (lower.match(/valley|vale|cliff|depression|pit|hole|crater|gravel|rubble|debris|rock|stone|rough|broken|terrain/)) {
+      potholeScore += score * 120;
+    } else if (lower.match(/road|highway|pavement|street|asphalt|concrete|sidewalk/)) {
       potholeScore += score * 15;
-      isRoadContext = true;
-    }
-    // Terrain (could be road)
-    else if (lower.match(/alp|tile|stone|wall|coal|sandbar|lakeside|dam|pier/)) {
-      potholeScore += score * 10;
     }
   }
 
-  // Clamp score to [0, 100]
-  const rawConf = Math.min(92, Math.max(0, Math.round(potholeScore)));
-
-  // Need minimum score to declare pothole detected
-  const DETECT_THRESHOLD = 30;
-  const detected = rawConf >= DETECT_THRESHOLD;
-
-  const getSeverity = (c) => {
-    if (c >= 72) return 'Critical';
-    if (c >= 52) return 'High';
-    if (c >= 32) return 'Medium';
-    return 'Low';
-  };
-
-  console.log(`[AI] potholeScore=${potholeScore.toFixed(1)} → detected=${detected} conf=${rawConf}%`);
-
-  // If no classification worked, use conservative defaults
-  if (classifications.length === 0) {
-    return {
-      detected: false,
-      isRoad: true,
-      label: 'analysis unavailable',
-      confidence: 0,
-      severity: 'Medium',
-      method: 'vit-classification',
-      warning: 'AI classification unavailable — manual review recommended'
-    };
-  }
+  const rawConf = Math.min(95, Math.max(0, Math.round(potholeScore)));
+  const detected = rawConf >= 25; // Lowered from 30 for better recall
+  const getSeverity = (c) => (c >= 70 ? 'Critical' : c >= 50 ? 'High' : c >= 30 ? 'Medium' : 'Low');
 
   return {
     detected,
     isRoad: true,
-    label: detected ? 'pothole' : 'road surface (no pothole)',
+    label: detected ? 'hazard detected' : 'clear road',
     confidence: rawConf,
     severity: detected ? getSeverity(rawConf) : null,
-    method: 'vit-classification',
-    topLabel: classifications[0]?.label,
-    modelId: 'google/vit-base-patch16-224'
+    method: 'vit-classification-fallback'
   };
 };
 
@@ -266,15 +323,14 @@ router.post('/detect', protect, upload.single('image'), async (req, res) => {
     if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
     console.error('[REPORTS] Detection error:', err.response?.status, err.message);
 
-    // Graceful non-blocking error — keep user on preview page
-    res.json({
+    res.status(500).json({
       detected: false,
-      isRoad: true,  // don't reset — it's a technical error, not a non-road image
-      label: 'ai unavailable',
+      isRoad: true,
+      label: 'detection error',
       confidence: 0,
       severity: 'Medium',
       method: 'error-fallback',
-      warning: 'AI service temporarily unavailable. You can still submit the report.'
+      warning: 'AI analysis encountered an error. You can still proceed manually.'
     });
   }
 });

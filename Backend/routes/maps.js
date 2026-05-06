@@ -19,9 +19,10 @@ router.get('/markers', async (req, res) => {
       severity: r.severity,
       confidence: r.confidence,
       imageUrl: r.imageUrl,
-      location: r.location,
+      location: r.locationName,
       createdAt: r.createdAt,
-      type: 'pothole'
+      type: r.hazardType || 'pothole',
+      verificationCount: r.verificationCount || 0
     })).filter(m => m.lat && m.lng);
     res.json(markers);
   } catch (error) {
@@ -37,7 +38,7 @@ router.get('/heatmap', async (req, res) => {
       const lat = r.latitude || r.gps?.lat;
       const lng = r.longitude || r.gps?.lng;
       let intensity = 0.5;
-      if (r.severity === 'Critical') intensity = 1.0;
+      if (r.severity === 'Critical' || r.severity === 'Dangerous') intensity = 1.0;
       else if (r.severity === 'High') intensity = 0.8;
       else if (r.severity === 'Medium') intensity = 0.5;
       else if (r.severity === 'Low') intensity = 0.3;

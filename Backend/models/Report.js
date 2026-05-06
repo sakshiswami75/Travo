@@ -13,7 +13,7 @@ const reportSchema = new mongoose.Schema({
   imagePublicId: {
     type: String // Cloudinary public_id for future deletion
   },
-  location: {
+  locationName: {
     type: String, // Human readable address
     default: 'Unknown location'
   },
@@ -25,9 +25,14 @@ const reportSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  hazardType: {
+    type: String,
+    enum: ['Pothole', 'Crack', 'Waterlogging', 'Construction', 'Accident', 'Missing Manhole', 'Traffic Block', 'Other'],
+    default: 'Pothole'
+  },
   severity: {
     type: String,
-    enum: ['Low', 'Medium', 'High', 'Critical'],
+    enum: ['Low', 'Medium', 'High', 'Dangerous', 'Critical'], // Kept Critical for backward compatibility with AI
     required: true
   },
   confidence: {
@@ -41,14 +46,34 @@ const reportSchema = new mongoose.Schema({
     boundingBoxes: [{ x: Number, y: Number, width: Number, height: Number }],
     rawResponse: { type: mongoose.Schema.Types.Mixed }
   },
+  aiAnalysis: {
+    detectedHazard: String,
+    confidence: Number,
+    riskLevel: String,
+    roadSafetyScore: Number,
+    vehicleDamageProbability: String,
+    suggestedAction: String
+  },
   description: {
     type: String,
     default: ''
   },
   status: {
     type: String,
-    enum: ['Pending', 'Reviewed', 'Resolved'],
+    enum: ['Pending', 'Verified', 'Sent to Municipality', 'In Progress', 'Resolved'],
     default: 'Pending'
+  },
+  verificationCount: {
+    type: Number,
+    default: 0
+  },
+  municipality: {
+    type: String,
+    default: 'Pending Assignment'
+  },
+  rewardEarned: {
+    type: Number,
+    default: 0
   }
 }, { timestamps: true });
 

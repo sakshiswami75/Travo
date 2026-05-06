@@ -35,6 +35,10 @@ const userSchema = new mongoose.Schema({
   routesSafePercentage: {
     type: Number,
     default: 100
+  },
+  rewardPoints: {
+    type: Number,
+    default: 0
   }
 }, { timestamps: true });
 

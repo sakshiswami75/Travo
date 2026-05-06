@@ -144,7 +144,7 @@ const detectWithGroq = async (imageBuffer) => {
               {
                 type: 'text',
                 text: `Analyze this image for road hazards. Respond strictly in JSON:
-                {"detected": boolean, "isRoad": boolean, "hazard_score": 1-10, "label": string, "description": string}`
+                {"detected": boolean, "isRoad": boolean, "hazard_score": 1-10, "label": string, "description": string, "riskLevel": string, "roadSafetyScore": number, "vehicleDamageProbability": string, "suggestedAction": string}`
               },
               {
                 type: 'image_url',
@@ -155,7 +155,7 @@ const detectWithGroq = async (imageBuffer) => {
         ],
         model: modelId,
         response_format: { type: 'json_object' },
-        temperature: 0, // Zero temperature for more consistent classification
+        temperature: 0,
       });
 
       const rawContent = chatCompletion.choices[0].message.content;
@@ -163,20 +163,28 @@ const detectWithGroq = async (imageBuffer) => {
       
       const result = JSON.parse(rawContent);
       
-      // Map hazard score to severity labels
       const score = result.hazard_score || 0;
       let calculatedSeverity = 'Low';
-      if (score >= 9) calculatedSeverity = 'Critical';
-      else if (score >= 7) calculatedSeverity = 'High';
-      else if (score >= 4) calculatedSeverity = 'Medium';
+      let calcRisk = 'Low Risk';
+      if (score >= 9) { calculatedSeverity = 'Critical'; calcRisk = 'Critical Risk'; }
+      else if (score >= 7) { calculatedSeverity = 'High'; calcRisk = 'High Risk'; }
+      else if (score >= 4) { calculatedSeverity = 'Medium'; calcRisk = 'Medium Risk'; }
 
       const normalized = {
         detected: result.detected === true,
-        isRoad: result.isRoad !== false, // Default to true unless explicitly false
+        isRoad: result.isRoad !== false,
         severity: calculatedSeverity,
-        confidence: result.confidence || (score * 10), // Synthetic confidence if missing
+        confidence: result.confidence || (score * 10),
         label: result.label || 'hazard',
-        description: result.description || ''
+        description: result.description || '',
+        aiAnalysis: {
+          detectedHazard: result.label || 'Unknown',
+          confidence: result.confidence || (score * 10),
+          riskLevel: result.riskLevel || calcRisk,
+          roadSafetyScore: result.roadSafetyScore || Math.max(10, 100 - (score * 10)),
+          vehicleDamageProbability: result.vehicleDamageProbability || (score >= 7 ? 'High' : score >= 4 ? 'Medium' : 'Low'),
+          suggestedAction: result.suggestedAction || 'Watch for hazard while driving.'
+        }
       };
 
       console.log(`[AI] Groq SUCCESS: ${normalized.label} (Score: ${score} -> ${normalized.severity} Risk)`);
@@ -335,40 +343,113 @@ router.post('/detect', protect, upload.single('image'), async (req, res) => {
   }
 });
 
-// ─── POST /api/reports/create ─────────────────────────────────────────────────
+// ─── POST /api/reports/create ──────────────────────────────────────────────────
 router.post('/create', protect, async (req, res) => {
-  const { imageUrl, imagePublicId, latitude, longitude, location, severity, confidence, aiDetectionResult, description } = req.body;
+  const { imageUrl, imagePublicId, latitude, longitude, locationName, hazardType, severity, confidence, aiDetectionResult, aiAnalysis, description } = req.body;
 
   if (!imageUrl || latitude === undefined || longitude === undefined) {
     return res.status(400).json({ message: 'imageUrl, latitude, and longitude are required' });
   }
 
   try {
+    // 1. Simulate Municipal Forwarding
+    const parts = (locationName || 'Local').split(',');
+    const city = parts.length > 1 ? parts[1].trim() : parts[0].trim();
+    const municipality = `${city} Municipal Corporation`;
+
+    // 2. Calculate Reward Points
+    let rewardEarned = 50; // Basic
+    if (severity === 'Dangerous' || severity === 'Critical') rewardEarned = 150;
+    else if (severity === 'High') rewardEarned = 100;
+
     const report = await Report.create({
       user: req.user.id,
       imageUrl,
       imagePublicId: imagePublicId || '',
-      location: location || 'Unknown location',
+      locationName: locationName || 'Unknown location',
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
+      hazardType: hazardType || 'Pothole',
       severity: severity || 'Medium',
       confidence: confidence || 0,
       aiDetectionResult: aiDetectionResult || {},
+      aiAnalysis: aiAnalysis || {},
       description: description || '',
-      status: 'Pending'
+      status: 'Sent to Municipality',
+      verificationCount: 0,
+      municipality,
+      rewardEarned
     });
 
-    console.log(`[REPORTS] Saved: ${report._id} | severity=${report.severity}`);
+    // 3. Update User Points
+    const User = require('../models/User'); 
+    const userDoc = await User.findById(req.user.id);
+    if (userDoc) {
+      userDoc.rewardPoints = (userDoc.rewardPoints || 0) + rewardEarned;
+      await userDoc.save();
+    }
+
+    // 4. Create Nearby Alert for High/Critical
+    if (['High', 'Critical', 'Dangerous'].includes(severity)) {
+      const Alert = require('../models/Alert');
+      await Alert.create({
+        title: `${severity} ${hazardType} Detected`,
+        description: `A ${severity.toLowerCase()} road hazard was just reported via AI scanner. Drive carefully in this area.`,
+        severity: severity === 'High' ? 'High' : 'High', // Alert schema maps everything above moderate to High
+        location: locationName || 'Nearby road',
+        distance: '0.1 mi away'
+      });
+    }
+
+    console.log(`[REPORTS] Saved: ${report._id} | severity=${report.severity} | mun=${municipality} | pts=${rewardEarned}`);
     res.status(201).json({
-      message: 'Report submitted successfully',
+      message: 'Report submitted and forwarded successfully',
       reportId: report._id,
       severity: report.severity,
-      status: report.status
+      status: report.status,
+      municipality,
+      rewardEarned
     });
 
   } catch (err) {
     console.error('[REPORTS] MongoDB save error:', err.message);
     res.status(500).json({ message: 'Failed to save report: ' + err.message });
+  }
+});
+
+// ─── PUT /api/reports/verify/:id ──────────────────────────────────────────────
+router.put('/verify/:id', async (req, res) => {
+  const { action } = req.body; // 'exists' or 'resolved'
+  try {
+    const report = await Report.findById(req.params.id);
+    if (!report) return res.status(404).json({ message: 'Report not found' });
+
+    if (action === 'exists') {
+      report.verificationCount = (report.verificationCount || 0) + 1;
+      if (report.verificationCount >= 3 && report.status === 'Sent to Municipality') {
+        report.status = 'Verified';
+      }
+    } else if (action === 'resolved') {
+      report.verificationCount = (report.verificationCount || 0) - 1;
+      if (report.verificationCount <= -3) {
+        report.status = 'Resolved';
+      }
+    }
+
+    await report.save();
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── GET /api/reports/all ──────────────────────────────────────────────────────
+router.get('/all', async (req, res) => {
+  try {
+    const reports = await Report.find({ status: { $ne: 'Resolved' } }).sort({ createdAt: -1 });
+    res.json(reports);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

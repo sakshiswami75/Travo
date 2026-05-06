@@ -9,11 +9,15 @@ import Alerts from './pages/Alerts';
 import History from './pages/History';
 import Profile from './pages/Profile';
 import Complaints from './pages/Complaints';
+import ThemeProvider from './components/ThemeProvider';
+import { Toaster } from 'react-hot-toast';
 
 function App() {
   return (
-    <Router>
-      <Routes>
+    <ThemeProvider>
+      <Router>
+        <Toaster position="top-center" />
+        <Routes>
         <Route path="/" element={<Splash />} />
         <Route path="/login" element={<Login />} />
         <Route path="/home" element={<Home />} />
@@ -24,8 +28,9 @@ function App() {
         <Route path="/profile" element={<Profile />} />
         <Route path="/complaints" element={<Complaints />} />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
+        </Routes>
+      </Router>
+    </ThemeProvider>
   );
 }
 

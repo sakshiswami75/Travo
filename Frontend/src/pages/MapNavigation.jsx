@@ -1,4 +1,3 @@
-import React from 'react';
 import TopAppBar from '../components/TopAppBar';
 import BottomNavBar from '../components/BottomNavBar';
 
@@ -11,7 +10,7 @@ export default function MapNavigation() {
       <main className="flex-1 relative w-full h-full map-bg" data-location="San Francisco">
         {/* Mobile Search Bar Overlay */}
         <div className="absolute top-8 left-margin-mobile right-margin-mobile md:top-24 md:max-w-md md:left-gutter z-30">
-          <div className="bg-surface rounded-[16px] shadow-lg border border-[#F3F4F6] flex items-center p-2 h-[56px]">
+          <div className="bg-surface rounded-[16px] shadow-lg border border-outline-variant/20 flex items-center p-2 h-[56px]">
             <span className="material-symbols-outlined text-on-surface-variant ml-2">search</span>
             <input type="text" placeholder="Where to?" className="flex-1 bg-transparent border-none focus:ring-0 text-body-lg font-body-lg text-on-surface placeholder:text-outline mx-2" />
             <button className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center hover:bg-surface-container-high transition-colors">
@@ -22,10 +21,10 @@ export default function MapNavigation() {
 
         {/* Floating Map Controls */}
         <div className="absolute top-32 right-margin-mobile flex flex-col gap-stack-md z-20">
-          <button className="w-12 h-12 bg-surface rounded-full shadow-lg border border-[#E5E7EB] flex items-center justify-center hover:bg-surface-container transition-colors">
+          <button className="w-12 h-12 bg-surface rounded-full shadow-lg border border-outline-variant/30 flex items-center justify-center hover:bg-surface-container transition-colors">
             <span className="material-symbols-outlined text-on-surface-variant">layers</span>
           </button>
-          <button className="w-12 h-12 bg-surface rounded-full shadow-lg border border-[#E5E7EB] flex items-center justify-center hover:bg-surface-container transition-colors">
+          <button className="w-12 h-12 bg-surface rounded-full shadow-lg border border-outline-variant/30 flex items-center justify-center hover:bg-surface-container transition-colors">
             <span className="material-symbols-outlined text-on-surface-variant">my_location</span>
           </button>
         </div>
@@ -52,7 +51,7 @@ export default function MapNavigation() {
 
         {/* Route Selection Card */}
         <div className="absolute bottom-[90px] left-margin-mobile right-margin-mobile md:bottom-8 md:max-w-md md:left-gutter z-30">
-          <div className="bg-surface rounded-[16px] shadow-[0_4px_12px_rgba(0,0,0,0.1)] border border-[#E5E7EB] overflow-hidden">
+          <div className="bg-surface rounded-[16px] shadow-[0_4px_12px_rgba(0,0,0,0.18)] border border-outline-variant/30 overflow-hidden">
             <div className="p-gutter">
               <div className="flex justify-between items-start mb-stack-sm">
                 <h2 className="text-h3 font-h3 text-on-surface">Route Options</h2>
@@ -72,7 +71,7 @@ export default function MapNavigation() {
                     <div className="text-caption font-caption text-on-surface-variant">4.2 mi</div>
                   </div>
                 </div>
-                <div className="border border-[#F3F4F6] rounded-lg p-3 hover:bg-surface-container-low flex justify-between items-center cursor-pointer transition-colors">
+                <div className="border border-outline-variant/20 rounded-lg p-3 hover:bg-surface-container-low flex justify-between items-center cursor-pointer transition-colors">
                   <div className="flex items-center gap-3">
                     <span className="material-symbols-outlined text-on-surface-variant">speed</span>
                     <div>

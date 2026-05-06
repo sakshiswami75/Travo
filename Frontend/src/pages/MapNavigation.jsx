@@ -19,21 +19,26 @@ L.Icon.Default.mergeOptions({
 });
 
 const getSeverityColor = (severity) => {
-  if (severity === 'Critical') return '#FF4C4C';
-  if (severity === 'High') return '#FFA500';
-  if (severity === 'Medium') return '#FFD700';
-  return '#4CAF50';
+  if (severity === 'Dangerous' || severity === 'Critical') return '#FF4C4C'; // Red
+  if (severity === 'High') return '#FF7043'; // Deep Orange
+  if (severity === 'Medium') return '#FFA500'; // Orange
+  return '#4CAF50'; // Green
 };
 
-const createCustomIcon = (severity) => {
-  const color = getSeverityColor(severity);
+const createCustomIcon = (marker) => {
+  const color = getSeverityColor(marker.severity);
+  const isSevere = marker.severity === 'Dangerous' || marker.severity === 'Critical';
+  const isVerified = marker.verificationCount >= 2;
+  
+  const size = isSevere ? 20 : marker.severity === 'High' ? 16 : 12;
+  const pulseClass = (isSevere && isVerified) ? 'animate-[ping_1.5s_cubic-bezier(0,0,0.2,1)_infinite]' : 'opacity-40 animate-pulse';
 
   return L.divIcon({
     className: 'custom-leaflet-icon',
     html: `
       <div class="relative flex items-center justify-center w-8 h-8">
-        <div class="absolute inset-0 rounded-full opacity-40 animate-ping" style="background-color: ${color}"></div>
-        <div class="relative z-[1] w-4 h-4 rounded-full border-2 border-white shadow-md" style="background-color: ${color}"></div>
+        <div class="absolute inset-0 rounded-full ${pulseClass}" style="background-color: ${color}"></div>
+        <div class="relative z-[1] rounded-full border-2 border-white shadow-md" style="background-color: ${color}; width: ${size}px; height: ${size}px;"></div>
       </div>
     `,
     iconSize: [32, 32],
@@ -170,7 +175,7 @@ function MapNavigation() {
   const [mapZoom, setMapZoom] = useState(13);
 
   // ── Search & Input State ──
-  const [sourceQuery, setSourceQuery] = useState('Your Location');
+  const [sourceQuery, setSourceQuery] = useState('');
   const [destQuery, setDestQuery] = useState('');
   const [sourceCoords, setSourceCoords] = useState(null);
   const [destCoords, setDestCoords] = useState(null);
@@ -186,6 +191,7 @@ function MapNavigation() {
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [isListening, setIsListening] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   // ── AI & Data Features ──
   const [predictedHazards, setPredictedHazards] = useState([]);
@@ -200,6 +206,12 @@ function MapNavigation() {
   const initialLocationSetRef = useRef(false);
   const sourceQueryRef = useRef(sourceQuery);
   
+  useEffect(() => {
+    if (sourceCoords && destCoords) {
+      generateRoutesAuto(sourceCoords, destCoords);
+    }
+  }, [isDemoMode]);
+
   useEffect(() => {
     sourceQueryRef.current = sourceQuery;
   }, [sourceQuery]);
@@ -301,7 +313,6 @@ function MapNavigation() {
       // If we haven't locked a high-accuracy center yet, keep following the GPS
       if (!initialLocationSetRef.current) {
         setMapCenter(loc);
-        setSourceCoords(loc);
 
         // If accuracy is good (less than 150m), lock it so it stops jumping
         if (accuracy < 150) {
@@ -309,16 +320,9 @@ function MapNavigation() {
           console.log('[GPS] High accuracy fix locked.');
         }
 
-        // Update UI Label
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`);
-          const data = await res.json();
-          if (data && data.address) {
-            const city = data.address.city || data.address.town || data.address.village || data.address.suburb || 'Location';
-            setSourceQuery(`Your Location (${city})`);
-          }
-        } catch(e) {}
-      } else if (sourceQueryRef.current.includes('Your Location') && destCoords) {
+        // DO NOT automatically set source location or auto-fill the search bar.
+        // Wait for the user to explicitly click "Use My Current Location".
+      } else if (sourceQueryRef.current.includes('Your Location') && destCoords && sourceCoords) {
         // If we already have a route but our 'Your Location' just shifted significantly (more than 500m)
         // re-calculate the route automatically from the new precise location
         const dist = Math.hypot(latitude - sourceCoords[0], longitude - sourceCoords[1]);
@@ -358,7 +362,8 @@ function MapNavigation() {
     try {
       const res = await api.post('/maps/routes', {
         start: { lat: startLoc[0], lng: startLoc[1] },
-        end: { lat: endLoc[0], lng: endLoc[1] }
+        end: { lat: endLoc[0], lng: endLoc[1] },
+        demoMode: isDemoMode
       });
       const { routes: generatedRoutes, aiAssistant } = res.data;
       
@@ -381,7 +386,11 @@ function MapNavigation() {
            }
         }
 
-        speak(aiAssistant || 'Safe route generated. You can start navigation.');
+        if (isDemoMode && aiAssistant && aiAssistant.includes('Heavy traffic detected ahead')) {
+          speak('Traffic congestion ahead. Switching to optimized route.');
+        } else {
+          speak(aiAssistant || 'Safe route generated. You can start navigation.');
+        }
       } else {
         toast.error('No routes found', { id: 'route' });
       }
@@ -438,8 +447,13 @@ function MapNavigation() {
 
   const handleSearchInput = (e, type) => {
     const val = e.target.value;
-    if (type === 'source') setSourceQuery(val);
-    else setDestQuery(val);
+    if (type === 'source') {
+      setSourceQuery(val);
+      if (val !== sourceQuery) { setRoutes([]); setSelectedRoute(null); setSourceCoords(null); }
+    } else {
+      setDestQuery(val);
+      if (val !== destQuery) { setRoutes([]); setSelectedRoute(null); setDestCoords(null); }
+    }
     setActiveInput(type);
     
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
@@ -475,8 +489,6 @@ function MapNavigation() {
       setDestCoords(coords);
       if (sourceCoords) {
         generateRoutesAuto(sourceCoords, coords);
-      } else {
-         toast.error('GPS not ready yet, please set source location.');
       }
     }
   };
@@ -492,7 +504,12 @@ function MapNavigation() {
     const sC = sourceCoords; const dC = destCoords;
     setSourceQuery(dQ); setDestQuery(sQ);
     setSourceCoords(dC); setDestCoords(sC);
-    if (sC && dC) generateRoutesAuto(dC, sC);
+    if (sC && dC) {
+      generateRoutesAuto(dC, sC);
+    } else {
+      setRoutes([]);
+      setSelectedRoute(null);
+    }
   };
 
   // ── REAL Live Navigation ──
@@ -605,12 +622,34 @@ function MapNavigation() {
     return '#FF9800'; // Orange
   };
 
+  const formatTime = (mins) => {
+    if (mins < 60) return `${mins} mins`;
+    const hrs = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${hrs} hrs ${m} mins` : `${hrs} hrs`;
+  };
+
+  const fastestRoute = routes.find(rt => rt.type === 'fastest');
+  const getHazardReductionText = (r) => {
+    if (!fastestRoute || fastestRoute.hazards <= r.hazards) return null;
+    const reduction = Math.round(((fastestRoute.hazards - r.hazards) / fastestRoute.hazards) * 100);
+    return `${reduction}% Hazard Reduction`;
+  };
+
   return (
     <div className="bg-surface text-on-surface h-[100dvh] w-full overflow-hidden flex flex-col relative font-sans">
       {!isNavigating && <TopAppBar />}
 
       <main className={`flex-1 relative w-full h-full overflow-hidden`}>
         
+        {/* Floating Demo Mode Badge */}
+        {isDemoMode && (
+          <div className="absolute top-4 right-4 z-[2000] bg-red-600 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg animate-pulse pointer-events-none">
+            <span className="material-symbols-outlined text-[14px]">science</span>
+            Demo Simulation Active
+          </div>
+        )}
+
         {/* Navigation Mode Header */}
         <AnimatePresence>
           {isNavigating && (
@@ -731,7 +770,7 @@ function MapNavigation() {
             ))}
 
             {markers.map((marker) => (
-              <Marker key={marker.id} position={[marker.lat, marker.lng]} icon={createCustomIcon(marker.severity)}>
+              <Marker key={marker.id} position={[marker.lat, marker.lng]} icon={createCustomIcon(marker)}>
                 <Popup className="rounded-2xl shadow-xl border-none overflow-hidden p-0">
                   <div className="w-[220px]">
                     {marker.imageUrl && <img src={marker.imageUrl} alt="Pothole" className="w-full h-28 object-cover" />}
@@ -786,7 +825,27 @@ function MapNavigation() {
               selectedRoute.trafficSegments
                 .filter(seg => seg && seg.coordinates && seg.coordinates.length > 0)
                 .map((seg, idx) => (
-                  <Polyline key={`seg-${idx}`} positions={seg.coordinates} color={seg.color} weight={7} opacity={1} />
+                  <React.Fragment key={`seg-wrapper-${idx}`}>
+                    <Polyline 
+                      key={`seg-${idx}`} 
+                      positions={seg.coordinates} 
+                      color={seg.color} 
+                      weight={seg.isHeavy ? 9 : 7} 
+                      opacity={1} 
+                      className={seg.isHeavy ? 'traffic-heavy-glow animate-pulse' : ''}
+                    />
+                    {seg.isHeavy && seg.coordinates.length > 2 && (
+                      <Marker 
+                        position={seg.coordinates[Math.floor(seg.coordinates.length / 2)]} 
+                        icon={L.divIcon({
+                          className: 'bg-transparent',
+                          html: `<div class="bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg border-2 border-white whitespace-nowrap animate-bounce">Heavy Traffic Ahead</div>`,
+                          iconSize: [120, 24],
+                          iconAnchor: [60, 12]
+                        })} 
+                      />
+                    )}
+                  </React.Fragment>
               ))
             )}
             
@@ -805,6 +864,9 @@ function MapNavigation() {
             </button>
             <button onClick={() => setVoiceEnabled(!voiceEnabled)} className={`w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all ${voiceEnabled ? 'bg-surface text-on-surface-variant' : 'bg-surface text-on-surface-variant opacity-50'}`}>
               <span className="material-symbols-outlined">{voiceEnabled ? 'volume_up' : 'volume_off'}</span>
+            </button>
+            <button onClick={() => setIsDemoMode(!isDemoMode)} className={`w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all ${isDemoMode ? 'bg-red-600 text-white animate-pulse' : 'bg-surface text-on-surface-variant hover:bg-surface-container'}`}>
+              <span className="material-symbols-outlined">science</span>
             </button>
             <button onClick={() => userLocation && setMapCenter(userLocation)} className="w-12 h-12 bg-surface text-primary rounded-full shadow-lg flex items-center justify-center hover:bg-surface-container">
               <span className="material-symbols-outlined">my_location</span>
@@ -846,24 +908,61 @@ function MapNavigation() {
                 <div className="flex flex-col gap-3">
                   {routes.map((r) => (
                     <div key={r.id} onClick={() => setSelectedRoute(r)} 
-                         className={`rounded-2xl p-4 flex justify-between items-center cursor-pointer transition-all border-2 
+                         className={`rounded-2xl p-4 flex flex-col cursor-pointer transition-all border-2 
                          ${selectedRoute?.id === r.id ? (r.type === 'safest' ? 'border-[#4CAF50] bg-[#4CAF50]/10' : r.type === 'fastest' ? 'border-[#2196F3] bg-[#2196F3]/10' : 'border-[#FF9800] bg-[#FF9800]/10') : 'border-outline-variant/20 hover:bg-surface-container'}`}>
-                      <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center 
-                             ${selectedRoute?.id === r.id ? (r.type === 'safest' ? 'bg-[#4CAF50] text-white' : r.type === 'fastest' ? 'bg-[#2196F3] text-white' : 'bg-[#FF9800] text-white') : 'bg-surface-container-high text-on-surface-variant'}`}>
-                          <span className="material-symbols-outlined text-2xl">{r.type === 'safest' ? 'health_and_safety' : r.type === 'fastest' ? 'bolt' : 'alt_route'}</span>
-                        </div>
-                        <div>
-                          <div className="text-lg font-bold text-on-surface capitalize">{r.type} Route</div>
-                          <div className="text-xs flex gap-3 font-medium mt-1">
-                            <span className={r.trafficLevel === 'Heavy' ? 'text-red-500 font-bold' : r.trafficLevel === 'Moderate' ? 'text-orange-500' : 'text-green-600'}>{r.trafficLevel} Traffic</span>
-                            <span className={r.score > 80 ? 'text-[#4CAF50] font-bold' : r.score > 50 ? 'text-[#FFA500]' : 'text-[#FF4C4C] font-bold'}>{r.hazards} Hazards</span>
+                      
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-sm
+                               ${selectedRoute?.id === r.id ? (r.type === 'safest' ? 'bg-[#4CAF50] text-white' : r.type === 'fastest' ? 'bg-[#2196F3] text-white' : 'bg-[#FF9800] text-white') : 'bg-surface-container-high text-on-surface-variant'}`}>
+                            <span className="material-symbols-outlined">{r.type === 'safest' ? 'health_and_safety' : r.type === 'fastest' ? 'bolt' : 'alt_route'}</span>
+                          </div>
+                          <div>
+                            <div className="text-lg font-black text-on-surface capitalize tracking-wide">{r.type === 'safest' ? 'Ride Comfort Mode' : r.type === 'fastest' ? 'Fastest Route' : 'Alternate Route'}</div>
+                            <div className="text-xs text-on-surface-variant font-bold uppercase tracking-wider">{r.type === 'safest' ? 'AI Optimized Safety' : 'Time Optimized'}</div>
                           </div>
                         </div>
+                        <div className="text-right">
+                          <div className={`text-2xl font-black ${selectedRoute?.id === r.id ? 'text-on-surface' : 'text-on-surface-variant'}`}>{formatTime(r.duration)}</div>
+                          <div className="text-xs text-on-surface-variant font-black">{r.distance} km</div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <div className={`text-2xl font-black ${selectedRoute?.id === r.id ? 'text-on-surface' : 'text-on-surface-variant'}`}>{r.duration}<span className="text-sm font-medium">m</span></div>
-                        <div className="text-sm text-on-surface-variant font-medium">{r.distance} mi</div>
+
+                      {/* Route Metrics Differentiated by Type */}
+                      <div className="bg-surface-container-lowest rounded-xl p-3 flex flex-wrap gap-2 mt-2">
+                        {r.type === 'fastest' ? (
+                          <>
+                            <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-surface-container rounded-md">
+                              <span className={`material-symbols-outlined text-[14px] ${r.trafficLevel === 'Heavy' ? 'text-red-500' : r.trafficLevel === 'Moderate' ? 'text-orange-500' : 'text-green-500'}`}>traffic</span>
+                              {r.trafficLevel} Traffic
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-surface-container rounded-md">
+                              <span className="material-symbols-outlined text-[14px] text-blue-500">local_gas_station</span>
+                              {r.fuelEfficiency}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-error-container text-error rounded-md">
+                              <span className="material-symbols-outlined text-[14px]">warning</span>
+                              {r.hazards} Hazards
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-[#4CAF50]/20 text-green-700 rounded-md">
+                              <span className="material-symbols-outlined text-[14px]">shield</span>
+                              AI Score: {r.score}/100
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-surface-container rounded-md">
+                              <span className="material-symbols-outlined text-[14px] text-purple-500">airline_seat_recline_extra</span>
+                              {r.comfortRating}
+                            </div>
+                            {getHazardReductionText(r) && (
+                              <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-surface-container rounded-md">
+                                <span className="material-symbols-outlined text-[14px] text-orange-500">reduce_capacity</span>
+                                {getHazardReductionText(r)}
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -887,9 +986,9 @@ function MapNavigation() {
               className="absolute bottom-0 left-0 right-0 z-[1000] bg-surface p-4 pb-6 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.15)] flex justify-between items-center"
             >
               <div>
-                <div className="text-3xl font-black text-[#4CAF50]">{selectedRoute.duration}<span className="text-lg font-medium text-on-surface"> min</span></div>
+                <div className="text-3xl font-black text-[#4CAF50]">{formatTime(selectedRoute.duration)}</div>
                 <div className="text-sm font-bold text-on-surface-variant flex gap-4 mt-1">
-                  <span>{selectedRoute.distance} mi</span>
+                  <span>{selectedRoute.distance} km</span>
                   <span>•</span>
                   <span>{selectedRoute.hazards} Hazards Ahead</span>
                 </div>

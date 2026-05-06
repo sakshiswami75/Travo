@@ -83,7 +83,7 @@ router.get('/search', async (req, res) => {
 // @route   POST /api/maps/routes
 // @desc    Generate routes with Weather, Traffic overlay segments, and AI Safety Assistant
 router.post('/routes', async (req, res) => {
-  const { start, end } = req.body;
+  const { start, end, demoMode } = req.body;
   if (!start || !end) return res.status(400).json({ message: 'Start and end coordinates required' });
 
   try {
@@ -138,30 +138,64 @@ router.post('/routes', async (req, res) => {
           const dist = Math.hypot(h.lat - pt[0], h.lng - pt[1]);
           if (dist < 0.005) { 
             hazardsEncountered++;
-            if (h.severity === 'Critical') totalSeverityWeight += 30;
-            else if (h.severity === 'High') totalSeverityWeight += 15;
-            else if (h.severity === 'Medium') totalSeverityWeight += 5;
-            else totalSeverityWeight += 2;
+            let weight = 0;
+            // Severity weights
+            if (h.severity === 'Low') weight = 1;         // Small pothole
+            else if (h.severity === 'Medium') weight = 3; // Medium pothole
+            else if (h.severity === 'High') weight = 7;   // Deep pothole
+            else weight = 10;                             // Critical / Waterlogged
+
+            // Crowd verification
+            if (h.verificationCount >= 3) weight += 5;
+
+            // Accident-prone assumption if critical + verified
+            if (h.severity === 'Critical' && h.verificationCount >= 2) weight += 8;
+
+            // Night / Weather penalty
+            const currentHour = new Date().getHours();
+            const isNight = currentHour >= 18 || currentHour <= 6;
+            if (isNight) weight += 3;
+            if (weatherData.isRaining && h.severity !== 'Low') weight += 5; 
+
+            totalSeverityWeight += weight;
             break;
           }
         }
       });
 
-      // Weather penalty
+      // Weather penalty for the whole route
       if (weatherData.isRaining) {
-        totalSeverityWeight += 15; // Wet roads make existing potholes much more dangerous
+        totalSeverityWeight += 15; 
       }
 
+      // Calculate AI Safety Score
       let safetyScore = 100 - totalSeverityWeight;
-      if (safetyScore < 20) safetyScore = 20;
+      // Slight variation based on distance/index to ensure routes don't mathematically collide on UI
+      safetyScore -= (index * 1.5);
+      safetyScore = Math.max(20, Math.round(safetyScore));
 
-      const distMiles = routeData.distance / 1609.34;
+      // Ride Comfort Calculation
+      let comfortRating = 'Excellent Comfort';
+      if (safetyScore < 50) comfortRating = 'Rough Ride';
+      else if (safetyScore < 70) comfortRating = 'Fair Comfort';
+      else if (safetyScore < 85) comfortRating = 'Good Comfort';
+
+      const distKm = routeData.distance / 1000;
       const durationMins = routeData.duration / 60;
-      const avgSpeed = durationMins > 0 ? (distMiles / (durationMins / 60)) : 30;
+      const avgSpeedKmH = durationMins > 0 ? (distKm / (durationMins / 60)) : 30;
       
+      // Fuel efficiency based on speed and stops
+      const fuelEfficiency = avgSpeedKmH > 35 && avgSpeedKmH < 80 ? 'High (Optimum)' : 'Average';
+
+      let finalDuration = Math.round(durationMins);
       let trafficLevel = 'Light';
-      if (avgSpeed < 15) trafficLevel = 'Heavy';
-      else if (avgSpeed < 25) trafficLevel = 'Moderate';
+      if (avgSpeedKmH < 20) {
+        trafficLevel = 'Heavy';
+        finalDuration = Math.round(finalDuration * 1.35); // 35% live traffic penalty
+      } else if (avgSpeedKmH < 40) {
+        trafficLevel = 'Moderate';
+        finalDuration = Math.round(finalDuration * 1.15); // 15% live traffic penalty
+      }
 
       // Parse Steps for Traffic Overlay Polylines
       const trafficSegments = [];
@@ -179,17 +213,18 @@ router.post('/routes', async (req, res) => {
         if (s.geometry && s.geometry.coordinates) {
           const segCoords = s.geometry.coordinates.map(c => [c[1], c[0]]);
           // Speed for this specific segment
-          const segMiles = s.distance / 1609.34;
+          const segKm = s.distance / 1000;
           const segHrs = s.duration / 3600;
-          const segSpeed = segHrs > 0 ? (segMiles / segHrs) : 30;
+          const segSpeedKmH = segHrs > 0 ? (segKm / segHrs) : 30;
           
           let color = '#4CAF50'; // Green
-          if (segSpeed < 10) color = '#FF4C4C'; // Red
-          else if (segSpeed < 20) color = '#FFA500'; // Orange
+          if (segSpeedKmH < 15) color = '#FF4C4C'; // Red
+          else if (segSpeedKmH < 30) color = '#FFA500'; // Orange
 
           trafficSegments.push({
             color,
-            coordinates: segCoords
+            coordinates: segCoords,
+            isHeavy: segSpeedKmH < 15
           });
         }
       });
@@ -199,16 +234,18 @@ router.post('/routes', async (req, res) => {
         originalIndex: index,
         coordinates,
         trafficSegments,
-        distance: distMiles.toFixed(1),
-        duration: Math.round(durationMins),
+        distance: distKm.toFixed(1),
+        duration: finalDuration,
         hazards: hazardsEncountered,
         score: safetyScore,
+        comfortRating,
+        fuelEfficiency,
         trafficLevel,
         instructions
       };
     });
 
-    // Categorize routes
+    // Categorize routes by newly penalized finalDuration
     let fastestRoute = [...generatedRoutes].sort((a, b) => a.duration - b.duration)[0];
     let safestRoute = [...generatedRoutes].sort((a, b) => b.score - a.score)[0];
     
@@ -230,17 +267,50 @@ router.post('/routes', async (req, res) => {
        finalRoutes.push(alternateRoute);
     }
 
+    // Hackathon Demo Mode Logic
+    if (demoMode) {
+      fastestRoute.trafficLevel = 'Heavy';
+      fastestRoute.duration += 12; // Artificially increase ETA
+      
+      // Inject heavy red congestion
+      fastestRoute.trafficSegments.forEach((seg, idx) => {
+        if (idx >= 1 && idx <= Math.floor(fastestRoute.trafficSegments.length / 2)) {
+          seg.isHeavy = true;
+          seg.color = '#FF4C4C'; // Red
+        } else if (idx % 2 === 0) {
+          seg.isHeavy = false;
+          seg.color = '#FFA500'; // Orange
+        }
+      });
+
+      if (safestRoute) {
+        safestRoute.trafficLevel = 'Light';
+        safestRoute.duration = fastestRoute.duration - 4; // Make it artificially faster to trigger AI recommendation
+      }
+    }
+
     // AI Safety Assistant Message
     let aiMessage = '';
+    
+    // Traffic AI Logic
+    const hasHeavyTraffic = fastestRoute.trafficLevel === 'Heavy' || fastestRoute.trafficSegments.some(s => s.isHeavy);
+    if (hasHeavyTraffic) {
+      if (safestRoute && safestRoute.duration <= fastestRoute.duration + 5 && safestRoute.trafficLevel !== 'Heavy') {
+        aiMessage += '🚨 Heavy traffic detected ahead. AI found a faster alternative. ';
+      } else {
+        aiMessage += '🚨 Heavy traffic ahead. ETA has been dynamically increased. ';
+      }
+    }
+
     if (weatherData.isRaining) {
       aiMessage += '⚠️ Wet roads detected. Potholes may be hidden under water. ';
     }
     
     if (fastestRoute.score < 50 && safestRoute.score > fastestRoute.score) {
       aiMessage += `The fastest route is highly dangerous with ${fastestRoute.hazards} severe hazards. The Safest Route is strongly recommended.`;
-    } else if (fastestRoute.hazards > 0) {
+    } else if (fastestRoute.hazards > 0 && !hasHeavyTraffic) {
       aiMessage += `Proceed with caution. The fastest route contains ${fastestRoute.hazards} reported hazards.`;
-    } else {
+    } else if (!hasHeavyTraffic) {
       aiMessage += 'Roads look clear! Have a safe trip.';
     }
 

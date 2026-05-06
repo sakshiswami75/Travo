@@ -196,3 +196,13 @@
       linear-gradient(10deg, transparent 48%, rgba(210, 187, 255, 0.36) 49%, rgba(210, 187, 255, 0.36) 51%, transparent 52%),
       linear-gradient(-15deg, transparent 48%, rgba(78, 222, 163, 0.22) 49%, rgba(78, 222, 163, 0.22) 51%, transparent 52%);
 }
+
+.traffic-heavy-glow {
+  filter: drop-shadow(0 0 8px rgba(255, 0, 0, 0.9));
+  animation: traffic-pulse 1.5s infinite alternate;
+}
+
+@keyframes traffic-pulse {
+  from { filter: drop-shadow(0 0 5px rgba(255, 0, 0, 0.6)); }
+  to { filter: drop-shadow(0 0 12px rgba(255, 0, 0, 1)); }
+}

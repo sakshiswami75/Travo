@@ -9,8 +9,8 @@ export default function BottomNavBar() {
   const isActive = (path) => currentPath === path;
 
   return (
-    <div className="fixed bottom-6 left-0 right-0 z-50 flex justify-center px-4 md:hidden pointer-events-none">
-      <nav className="w-full max-w-md bg-surface-container-lowest shadow-[0_8px_30px_rgb(0,0,0,0.12)] rounded-full h-[72px] flex justify-between items-center px-2 relative pointer-events-auto border border-outline-variant/30">
+    <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 flex justify-center pointer-events-none">
+      <nav className="w-full bg-surface-container-lowest shadow-[0_-4px_20px_rgb(0,0,0,0.08)] h-[72px] flex justify-between items-center px-2 relative pointer-events-auto border-t border-outline-variant/30">
         
         {/* Home */}
         <Link to="/home" className="flex flex-col items-center justify-center flex-1 h-full pt-1">

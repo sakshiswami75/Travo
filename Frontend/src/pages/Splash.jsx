@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import logo from '../assets/logo.png';
 
 export default function Splash() {
   const navigate = useNavigate();
@@ -21,7 +22,7 @@ export default function Splash() {
       <div className="flex-1 w-full flex flex-col items-center justify-center z-10 p-margin-mobile">
         {/* Logo Container */}
         <div className="w-32 h-32 md:w-40 md:h-40 rounded-3xl bg-surface shadow-[0_12px_24px_-8px_rgba(124,58,237,0.15)] flex items-center justify-center mb-stack-lg border border-outline-variant/30">
-          <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuAT4cq7DH4zotFxiVSys6pvXLYHZNzaM861HSHp5NI8ZuQYQ8oOTtJCmQRVBVKsZ4mhI9o52oorPNyOapAnpLef9be90qw5yV5I4V-6KmfLMKYT8nYzrcRn6IfE1uzmiJPRU4bx1EvworJL8l9x0jftPNesvbBfCy8y_3C-66rWBwiDH2vC__iftTi5qIuaJoicd-6QN4t0Xn1m2YDAyHVhFxK49XwwYF_CZrs1BlYT80Phq3jzfXW_gsf6IbipbNo6XmzJlVMYrT-0" alt="Travo Logo" className="w-24 h-24 md:w-32 md:h-32 object-contain" />
+          <img src={logo} alt="Travo Logo" className="w-24 h-24 md:w-32 md:h-32 object-contain" />
         </div>
         {/* Typography */}
         <div className="text-center max-w-sm">

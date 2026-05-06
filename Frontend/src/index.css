@@ -112,6 +112,25 @@
   body {
     @apply bg-surface text-on-surface antialiased;
     font-family: 'Public Sans', sans-serif;
+    background-color: #f0f2f5; /* Subtle background for desktop */
+  }
+
+  .dark body {
+    background-color: #0a0a0c;
+  }
+
+  #root {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    background-color: rgb(var(--color-background));
+    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  .dark #root {
+    box-shadow: 0 0 40px rgba(0,0,0,0.4);
   }
 }
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { authService } from '../services/api';
+import logo from '../assets/logo.png';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -53,7 +54,7 @@ export default function Login() {
       <div className="w-full max-w-md bg-surface-container-lowest rounded-xl shadow-lg border border-outline-variant/20 p-stack-lg z-10">
         {/* Logo Header */}
         <div className="flex flex-col items-center mb-stack-lg">
-          <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuAT4cq7DH4zotFxiVSys6pvXLYHZNzaM861HSHp5NI8ZuQYQ8oOTtJCmQRVBVKsZ4mhI9o52oorPNyOapAnpLef9be90qw5yV5I4V-6KmfLMKYT8nYzrcRn6IfE1uzmiJPRU4bx1EvworJL8l9x0jftPNesvbBfCy8y_3C-66rWBwiDH2vC__iftTi5qIuaJoicd-6QN4t0Xn1m2YDAyHVhFxK49XwwYF_CZrs1BlYT80Phq3jzfXW_gsf6IbipbNo6XmzJlVMYrT-0" alt="Travo App Icon" className="w-20 h-20 mb-stack-sm object-contain" />
+          <img src={logo} alt="Travo App Icon" className="w-20 h-20 mb-stack-sm object-contain" />
           <h1 className="font-h1 text-h1 text-on-surface">Travo</h1>
         </div>
         

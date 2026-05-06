@@ -82,9 +82,9 @@ export default function Home() {
         </section>
 
         {/* Top Bento Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-gutter">
+        <div className="grid grid-cols-1 gap-gutter">
           {/* Safety Score Card */}
-          <div className="md:col-span-8 bg-surface-container-lowest rounded-2xl border border-outline-variant/20 shadow-sm p-5 relative overflow-hidden flex flex-col justify-between">
+          <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/20 shadow-sm p-5 relative overflow-hidden flex flex-col justify-between">
             <div className="absolute -right-20 -top-20 w-64 h-64 bg-secondary-container/20 rounded-full blur-3xl pointer-events-none"></div>
             <div className="flex justify-between items-start z-10 relative">
               <div>
@@ -127,7 +127,7 @@ export default function Home() {
           </div>
 
           {/* Quick Map Preview */}
-          <div className="md:col-span-4 bg-surface-container-lowest rounded-2xl border border-outline-variant/20 shadow-sm overflow-hidden flex flex-col h-full min-h-[200px] relative group">
+          <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/20 shadow-sm overflow-hidden flex flex-col h-full min-h-[200px] relative group">
             <div className="absolute top-4 left-4 z-10 bg-surface/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm border border-outline-variant/20 flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
               <span className="text-caption font-caption text-on-surface font-semibold">Downtown</span>
@@ -173,7 +173,7 @@ export default function Home() {
             </div>
             <Link to="/alerts" className="text-primary text-label-bold font-label-bold hover:underline">View All</Link>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-gutter">
+          <div className="grid grid-cols-1 gap-gutter">
             {alerts.length > 0 ? alerts.map((alert) => (
               <div key={alert._id} className="bg-surface-container-lowest border border-outline-variant/20 rounded-2xl p-4 flex gap-4 shadow-sm hover:shadow-md transition-shadow">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${

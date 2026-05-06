@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-surface text-on-surface antialiased;
+    font-family: 'Public Sans', sans-serif;
+  }
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.depth-level-2 {
+  border: 1px solid #E5E7EB;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.scanner-overlay {
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(124, 58, 237, 0.1) 50%, rgba(0, 0, 0, 0) 100%);
+}
+.corner-border {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border: 4px solid #7c3aed;
+}
+.tl { top: 0; left: 0; border-right: none; border-bottom: none; border-top-left-radius: 16px; }
+.tr { top: 0; right: 0; border-left: none; border-bottom: none; border-top-right-radius: 16px; }
+.bl { bottom: 0; left: 0; border-right: none; border-top: none; border-bottom-left-radius: 16px; }
+.br { bottom: 0; right: 0; border-left: none; border-top: none; border-bottom-right-radius: 16px; }
+
+.map-bg {
+  background-color: #e5e3df;
+  background-image: 
+      linear-gradient(45deg, transparent 48%, rgba(255, 255, 255, 0.8) 49%, rgba(255, 255, 255, 0.8) 51%, transparent 52%),
+      linear-gradient(-45deg, transparent 48%, rgba(255, 255, 255, 0.8) 49%, rgba(255, 255, 255, 0.8) 51%, transparent 52%),
+      linear-gradient(10deg, transparent 48%, #ffb784 49%, #ffb784 51%, transparent 52%),
+      linear-gradient(-15deg, transparent 48%, #ffdad6 49%, #ffdad6 51%, transparent 52%);
+  background-size: 150px 150px, 120px 120px, 300px 300px, 200px 200px;
+  background-position: 0 0, 50px 50px, 20px 20px, 80px 80px;
+}

@@ -148,18 +148,23 @@ export default function Home() {
         {/* Quick Actions Grid */}
         <section className="mt-stack-lg">
           <h3 className="text-h3 font-h3 text-on-surface mb-stack-md">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-gutter">
-            <Link to="/scan" className="bg-primary-container/10 border border-primary/20 rounded-2xl p-4 flex flex-col items-center justify-center gap-3 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all group">
-              <div className="w-12 h-12 rounded-full bg-primary-container text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined">center_focus_strong</span>
+          <div className="flex justify-center w-full">
+            <Link 
+              to="/complaints" 
+              onClick={() => {
+                if ('geolocation' in navigator) {
+                  navigator.geolocation.getCurrentPosition(() => {}, () => {});
+                }
+              }}
+              className="w-full max-w-sm bg-gradient-to-br from-primary-container/20 to-surface-container-lowest border border-primary/20 rounded-[28px] p-6 flex flex-col items-center justify-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-2 active:scale-95 active:shadow-sm transition-all duration-300 group"
+            >
+              <div className="w-16 h-16 rounded-full bg-primary-container text-primary flex items-center justify-center group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-inner">
+                <span className="material-symbols-outlined text-[32px]">center_focus_strong</span>
               </div>
-              <span className="text-label-bold font-label-bold text-on-surface">Report Hazard</span>
-            </Link>
-            <Link to="/complaints" className="bg-surface-container-lowest border border-outline-variant/20 rounded-2xl p-4 flex flex-col items-center justify-center gap-3 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all group">
-              <div className="w-12 h-12 rounded-full bg-error-container text-error flex items-center justify-center group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined">campaign</span>
-              </div>
-              <span className="text-label-bold font-label-bold text-on-surface">File Complaint</span>
+              <span className="text-h3 font-h3 text-on-surface mt-1">AI Hazard Report</span>
+              <p className="text-body-sm text-on-surface-variant text-center max-w-[220px]">
+                Scan and instantly report road hazards to earn civic points.
+              </p>
             </Link>
           </div>
         </section>

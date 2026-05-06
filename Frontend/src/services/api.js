@@ -56,6 +56,12 @@ export const reportService = {
 
   // Get user's past reports
   getReports: () => api.get('/reports'),
+
+  // Get all reports for map
+  getAllReports: () => api.get('/reports/all'),
+
+  // Verify report (crowdsourcing)
+  verifyReport: (id, action) => api.put(`/reports/verify/${id}`, { action })
 };
 
 export default api;

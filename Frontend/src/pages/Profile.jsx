@@ -87,7 +87,7 @@ export default function Profile() {
             <div className="absolute -bottom-8 -left-8 w-20 h-20 bg-white/10 rounded-full blur-xl"></div>
             <span className="material-symbols-outlined text-4xl mb-2 text-primary-fixed-dim" style={{ fontVariationSettings: "'FILL' 1" }}>workspace_premium</span>
             <p className="text-label-bold font-label-bold text-primary-fixed">Reward Points</p>
-            <p className="text-h1 font-h1 mt-1">2,450</p>
+            <p className="text-h1 font-h1 mt-1">{user?.rewardPoints?.toLocaleString() || 0}</p>
           </div>
         </section>
 

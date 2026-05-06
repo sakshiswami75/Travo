@@ -1,28 +1,38 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TopAppBar from '../components/TopAppBar';
 import BottomNavBar from '../components/BottomNavBar';
 import toast from 'react-hot-toast';
 import { reportService } from '../services/api';
+import axios from 'axios';
 
-// ── Severity helpers ────────────────────────────────────────────────────────
 const SEVERITY_CONFIG = {
   Critical: { color: 'bg-error-container text-error', icon: 'emergency', dot: 'bg-error', label: 'Critical — Immediate danger. Deep structural damage.' },
-  High:     { color: 'bg-tertiary-container text-tertiary', icon: 'warning', dot: 'bg-tertiary', label: 'High — Serious risk. Requires urgent attention.' },
-  Medium:   { color: 'bg-surface-container-high text-on-surface', icon: 'priority_high', dot: 'bg-outline', label: 'Medium — Moderate pothole. Attention needed soon.' },
-  Low:      { color: 'bg-secondary-container text-secondary', icon: 'info', dot: 'bg-secondary', label: 'Low — Minor surface damage detected.' },
+  Dangerous: { color: 'bg-error-container text-error', icon: 'warning', dot: 'bg-error', label: 'Dangerous — Serious risk. High potential for accidents.' },
+  High: { color: 'bg-tertiary-container text-tertiary', icon: 'priority_high', dot: 'bg-tertiary', label: 'High — Significant hazard. Needs urgent attention.' },
+  Medium: { color: 'bg-surface-container-high text-on-surface', icon: 'info', dot: 'bg-outline', label: 'Medium — Moderate hazard. Drive with caution.' },
+  Low: { color: 'bg-secondary-container text-secondary', icon: 'check_circle', dot: 'bg-secondary', label: 'Low — Minor issue. Low risk.' },
 };
+
+const HAZARD_TYPES = ['Pothole', 'Crack', 'Waterlogging', 'Construction', 'Accident', 'Missing Manhole', 'Traffic Block', 'Other'];
+const SEVERITIES = ['Low', 'Medium', 'High', 'Dangerous'];
 
 export default function Scan() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
-  // ── State ────────────────────────────────────────────────────────────────
+  // Tabs
+  const [activeTab, setActiveTab] = useState('report'); // 'report' | 'track'
+
+  // Report Form State
   const [step, setStep] = useState('select'); // 'select' | 'preview' | 'success'
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [description, setDescription] = useState('');
+  const [hazardType, setHazardType] = useState('Pothole');
+  const [severityOverride, setSeverityOverride] = useState('');
+  const [locationName, setLocationName] = useState('');
 
   // Upload & AI state
   const [uploading, setUploading] = useState(false);
@@ -34,13 +44,37 @@ export default function Scan() {
   const [cloudinaryUrl, setCloudinaryUrl] = useState(null);
   const [cloudinaryPublicId, setCloudinaryPublicId] = useState(null);
   const [aiResult, setAiResult] = useState(null);
+  const [submissionResult, setSubmissionResult] = useState(null);
 
   // GPS state
   const [gps, setGps] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState(null);
 
-  // ── GPS capture ──────────────────────────────────────────────────────────
+  // Tracking state
+  const [myReports, setMyReports] = useState([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+
+  // Fetch reports
+  useEffect(() => {
+    if (activeTab === 'track') {
+      fetchMyReports();
+    }
+  }, [activeTab]);
+
+  const fetchMyReports = async () => {
+    try {
+      setLoadingReports(true);
+      const res = await reportService.getReports();
+      setMyReports(res.data);
+    } catch (err) {
+      toast.error('Failed to load your reports');
+    } finally {
+      setLoadingReports(false);
+    }
+  };
+
+  // GPS + Reverse Geocode
   const captureGPS = useCallback(() => {
     if (!navigator.geolocation) {
       setGpsError('Geolocation not supported by this browser');
@@ -49,32 +83,40 @@ export default function Scan() {
     setGpsLoading(true);
     setGpsError(null);
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setGps({ lat, lng, accuracy: pos.coords.accuracy });
+        
+        try {
+          const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+          if (res.data && res.data.display_name) {
+            const shortName = res.data.display_name.split(',').slice(0, 3).join(',');
+            setLocationName(shortName);
+          }
+        } catch (e) {
+          console.warn('Reverse geocode failed', e);
+          setLocationName(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        }
         setGpsLoading(false);
       },
       (err) => {
         console.warn('GPS error:', err.message);
-        setGpsError('Location access denied. Using approximate coordinates.');
-        // Use a default location as fallback so the form can still submit
+        setGpsError('Location access denied. Please manually describe the location.');
         setGps({ lat: 19.0760, lng: 72.8777, accuracy: 9999, fallback: true });
+        setLocationName('Mumbai, India (Approximate)');
         setGpsLoading(false);
       },
       { timeout: 10000, enableHighAccuracy: true }
     );
   }, []);
 
-  // ── File selection handler ───────────────────────────────────────────────
   const handleFileSelected = (file) => {
     if (!file) return;
-
-    // Validate type
     if (!file.type.startsWith('image/')) {
       toast.error('Please select an image file (JPG, PNG, WEBP)');
       return;
     }
-
-    // Validate size (10MB)
     if (file.size > 10 * 1024 * 1024) {
       toast.error('Image must be smaller than 10MB');
       return;
@@ -85,15 +127,11 @@ export default function Scan() {
     setAiResult(null);
     setCloudinaryUrl(null);
     setStep('preview');
-
-    // Kick off GPS capture
     captureGPS();
   };
 
-  // ── Unified Analysis Flow ───────────────────────────────────────────────
   const handleAnalyze = async () => {
     if (!selectedFile) return;
-    
     setUploading(true);
     setUploadProgress(0);
 
@@ -102,7 +140,6 @@ export default function Scan() {
     }, 300);
 
     try {
-      // 1. Upload
       const formData = new FormData();
       formData.append('image', selectedFile);
       const uploadRes = await reportService.uploadImage(formData);
@@ -112,34 +149,38 @@ export default function Scan() {
       setCloudinaryUrl(uploadRes.data.imageUrl);
       setCloudinaryPublicId(uploadRes.data.publicId);
 
-      // 2. AI Detection
       setDetecting(true);
       const detectRes = await reportService.detectFile(formData);
       setAiResult(detectRes.data);
+      
+      // Auto-set severity if detected
+      if (detectRes.data.detected && detectRes.data.severity) {
+        setSeverityOverride(detectRes.data.severity === 'Critical' ? 'Dangerous' : detectRes.data.severity);
+      } else {
+        setSeverityOverride('Medium');
+      }
 
     } catch (err) {
       clearInterval(progressInterval);
       const msg = err.response?.data?.message || 'Process failed';
       toast.error(msg);
-      console.error('[SCAN] Analysis error:', err);
     } finally {
       setUploading(false);
       setDetecting(false);
     }
   };
 
-  // ── Submit final report ──────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!cloudinaryUrl || !aiResult) {
+    if (!cloudinaryUrl) {
       toast.error('Please analyze the image first');
       return;
     }
-    if (aiResult.isRoad === false) {
-      toast.error('Cannot submit: Invalid road image');
+    if (!gps) {
+      toast.error('Location is required. Please allow GPS.');
       return;
     }
-    if (!gps) {
-      toast.error('Fetching GPS location...');
+    if (!hazardType || !severityOverride) {
+      toast.error('Please fill in all required fields (Hazard Type, Severity)');
       return;
     }
 
@@ -150,14 +191,16 @@ export default function Scan() {
         imagePublicId: cloudinaryPublicId || '',
         latitude: gps.lat,
         longitude: gps.lng,
-        location: gps.fallback ? 'Mumbai, India (approximate)' : `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}`,
-        severity: aiResult?.severity || 'Medium',
+        locationName: locationName || `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}`,
+        hazardType,
+        severity: severityOverride,
         confidence: aiResult?.confidence || 0,
         aiDetectionResult: aiResult || {},
         description,
       };
 
-      await reportService.createReport(payload);
+      const res = await reportService.createReport(payload);
+      setSubmissionResult(res.data);
       toast.success('Report submitted successfully!');
       setStep('success');
     } catch (err) {
@@ -167,380 +210,238 @@ export default function Scan() {
     }
   };
 
-  // ── Reset ────────────────────────────────────────────────────────────────
   const handleReset = () => {
     setStep('select');
     setSelectedFile(null);
     setPreviewUrl(null);
     setDescription('');
+    setHazardType('Pothole');
+    setSeverityOverride('');
+    setLocationName('');
     setCloudinaryUrl(null);
     setCloudinaryPublicId(null);
+    setAiResult(null);
+    setSubmissionResult(null);
     setAiResult(null);
     setGps(null);
     setUploadProgress(0);
   };
 
-  const severity = aiResult?.severity || (aiResult?.detected ? 'Medium' : 'None');
-  
-  // Custom config for "Not a Road" state
   const isNotRoad = aiResult?.isRoad === false;
   
-  const severityConfig = isNotRoad 
-    ? { color: 'bg-error-container text-error', icon: 'block', dot: 'bg-error', label: aiResult.notRoadError || 'Invalid image.' }
-    : SEVERITY_CONFIG[severity] || { color: 'bg-secondary-container/20 text-secondary', icon: 'check_circle', dot: 'bg-secondary', label: 'Ready to analyze.' };
-
   return (
-    <div className="bg-background text-on-background font-body-md min-h-screen flex flex-col relative antialiased">
-      <TopAppBar />
+    <div className="bg-background text-on-background font-body-md min-h-[100dvh] flex flex-col relative antialiased">
+      <TopAppBar title="Report & Track" />
 
-      {/* ── SELECT IMAGE STEP ─────────────────────────────────────────── */}
-      {step === 'select' && (
-        <main className="flex-grow w-full max-w-md mx-auto p-margin-mobile flex flex-col pt-8 pb-32">
-          {/* Header */}
-          <div className="mb-stack-lg">
-            <h2 className="text-h1 font-h1 text-on-surface mb-2">Report Hazard</h2>
-            <p className="text-body-md text-on-surface-variant">Help keep our roads safe by reporting an issue.</p>
-          </div>
+      {/* Tabs */}
+      <div className="flex w-full bg-surface border-b border-outline-variant/20 pt-2 px-4 sticky top-[64px] z-[50]">
+        <button
+          onClick={() => setActiveTab('report')}
+          className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'report' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant'}`}
+        >
+          New Report
+        </button>
+        <button
+          onClick={() => setActiveTab('track')}
+          className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'track' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant'}`}
+        >
+          Track Status
+        </button>
+      </div>
 
-          {/* Step 1: Select Image Container */}
-          <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 shadow-sm">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs">
-                1
-              </div>
-              <h3 className="text-label-bold font-label-bold tracking-wider text-on-surface-variant uppercase">Select Image</h3>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              {/* Take Photo Card — opens camera on mobile */}
-              <div className="relative bg-surface border border-outline-variant/30 hover:border-primary/50 hover:bg-surface-container-low transition-all rounded-2xl p-6 flex flex-col items-center justify-center gap-2 aspect-square group shadow-sm overflow-hidden cursor-pointer">
-                <input
-                  ref={cameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => e.target.files?.[0] && handleFileSelected(e.target.files[0])}
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10 w-full h-full"
-                />
-                <div className="w-14 h-14 rounded-full bg-primary-container/20 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                  <span className="material-symbols-outlined text-primary text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>photo_camera</span>
-                </div>
-                <span className="text-body-lg font-bold text-on-surface">Take Photo</span>
-                <span className="text-body-sm text-on-surface-variant">Use camera</span>
+      {activeTab === 'report' ? (
+        <>
+          {step === 'select' && (
+            <main className="flex-1 w-full max-w-md mx-auto p-margin-mobile flex flex-col pt-6 pb-24 overflow-y-auto">
+              <div className="mb-stack-lg">
+                <h2 className="text-h1 font-h1 text-on-surface mb-2">Report Hazard</h2>
+                <p className="text-body-md text-on-surface-variant">Help keep our roads safe by reporting an issue with a photo.</p>
               </div>
 
-              {/* Upload Photo Card */}
-              <div className="relative bg-surface border border-outline-variant/30 hover:border-secondary/50 hover:bg-surface-container-low transition-all rounded-2xl p-6 flex flex-col items-center justify-center gap-2 aspect-square group shadow-sm overflow-hidden cursor-pointer">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => e.target.files?.[0] && handleFileSelected(e.target.files[0])}
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10 w-full h-full"
-                />
-                <div className="w-14 h-14 rounded-full bg-secondary-container/20 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                  <span className="material-symbols-outlined text-secondary text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>photo_library</span>
-                </div>
-                <span className="text-body-lg font-bold text-on-surface">Upload Photo</span>
-                <span className="text-body-sm text-on-surface-variant">From gallery</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Tips */}
-          <div className="mt-6 bg-primary/5 border border-primary/20 rounded-2xl p-4 flex gap-3">
-            <span className="material-symbols-outlined text-primary shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>lightbulb</span>
-            <p className="text-body-sm text-on-surface-variant">
-              <strong className="text-on-surface">Tips:</strong> Take a clear photo of the pothole from above. Good lighting helps the AI detect it more accurately.
-            </p>
-          </div>
-        </main>
-      )}
-
-      {/* ── PREVIEW / ANALYZE STEP ────────────────────────────────────── */}
-      {step === 'preview' && (
-        <main className="flex-grow w-full max-w-md mx-auto p-margin-mobile flex flex-col pt-8 pb-32">
-          {/* Header & Back */}
-          <div className="flex items-center gap-4 mb-stack-lg">
-            <button onClick={handleReset} className="w-10 h-10 bg-surface-container rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors">
-              <span className="material-symbols-outlined">arrow_back</span>
-            </button>
-            <div>
-              <h2 className="text-h2 font-h2 text-on-surface">Review Details</h2>
-              <p className="text-body-sm text-on-surface-variant">Confirm AI analysis and add description.</p>
-            </div>
-          </div>
-
-          {/* Image Preview */}
-          <div className="w-full h-52 bg-surface-container-low rounded-2xl overflow-hidden mb-6 relative shadow-sm border border-outline-variant/20">
-            {previewUrl && (
-              <img src={previewUrl} alt="Captured Hazard" className="w-full h-full object-cover" />
-            )}
-
-            {/* Upload progress overlay */}
-            {uploading && (
-              <div className="absolute inset-0 bg-surface/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
-                <div className="w-48 bg-surface-container-high rounded-full h-2 overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-                <span className="text-body-sm text-on-surface font-medium">Uploading to cloud... {uploadProgress}%</span>
-              </div>
-            )}
-
-            {/* AI scanning overlay */}
-            {detecting && !uploading && (
-              <div className="absolute inset-0 bg-surface/70 backdrop-blur-sm flex flex-col items-center justify-center gap-2">
-                <div className="w-8 h-8 border-[3px] border-primary border-t-transparent rounded-full animate-spin" />
-                <span className="text-body-sm text-on-surface font-medium">AI analyzing pixels...</span>
-              </div>
-            )}
-
-            {/* AI scanned badge */}
-            {aiResult && !uploading && !detecting && (
-              <div className="absolute top-4 right-4 bg-surface/90 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 shadow-sm border border-outline-variant/10">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                </span>
-                <span className="text-[10px] font-bold text-on-surface uppercase tracking-wider">AI Scanned</span>
-              </div>
-            )}
-          </div>
-
-          {/* AI Result Card */}
-          {(detecting || aiResult) && (
-            <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-4 mb-6 flex items-start gap-4 shadow-sm relative overflow-hidden">
-              <div className="absolute right-0 top-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2"></div>
-
-              {detecting ? (
-                <div className="flex items-center gap-3 z-10 w-full">
-                  <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center shrink-0 animate-pulse">
-                    <span className="material-symbols-outlined text-primary">psychology</span>
+              <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 shadow-sm mb-6">
+                <h3 className="text-label-bold font-label-bold text-on-surface mb-4 uppercase tracking-widest text-xs">Upload Photo</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="relative bg-surface border border-outline-variant/30 hover:border-primary/50 transition-all rounded-2xl p-6 flex flex-col items-center justify-center gap-2 aspect-square group shadow-sm cursor-pointer">
+                    <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={(e) => e.target.files?.[0] && handleFileSelected(e.target.files[0])} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                    <div className="w-14 h-14 rounded-full bg-primary-container/20 flex items-center justify-center text-primary mb-1"><span className="material-symbols-outlined text-3xl">photo_camera</span></div>
+                    <span className="text-sm font-bold">Take Photo</span>
                   </div>
-                  <div>
-                    <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest mb-0.5">AI Severity Analysis</p>
-                    <p className="text-body-md text-on-surface">Analyzing image for hazards...</p>
+                  <div className="relative bg-surface border border-outline-variant/30 hover:border-secondary/50 transition-all rounded-2xl p-6 flex flex-col items-center justify-center gap-2 aspect-square group shadow-sm cursor-pointer">
+                    <input ref={fileInputRef} type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && handleFileSelected(e.target.files[0])} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                    <div className="w-14 h-14 rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary mb-1"><span className="material-symbols-outlined text-3xl">photo_library</span></div>
+                    <span className="text-sm font-bold">Gallery</span>
                   </div>
                 </div>
-              ) : aiResult && (
-                <>
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 shadow-sm z-10 ${severityConfig.color}`}>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>{severityConfig.icon}</span>
-                  </div>
-                  <div className="z-10 flex-1">
-                    <h4 className="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest mb-0.5">AI Severity Analysis</h4>
-                    <p className="text-h3 font-h3 text-on-surface flex items-center gap-2">
-                      {isNotRoad ? 'Invalid Image' : (aiResult.detected ? `${severity} Risk` : 'Safe / Low Risk')}
-                      {aiResult.confidence > 0 && (
-                        <span className="text-body-sm font-normal text-on-surface-variant">({aiResult.confidence}% confidence)</span>
-                      )}
-                    </p>
-                    <p className="text-body-sm text-on-surface-variant mt-1">{aiResult.detected ? severityConfig.label : 'Road surface appears clear of major hazards.'}</p>
-                    {aiResult.detected && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <div className="inline-flex items-center gap-1 bg-error-container/40 text-error px-2 py-0.5 rounded-full text-[11px] font-bold">
-                          <span className="material-symbols-outlined text-[14px]">crisis_alert</span>
-                          {aiResult.count > 1 ? `${aiResult.count} Potholes Detected` : 'Pothole Detected'}
-                        </div>
-                        {aiResult.method === 'yolos-pothole-model' && (
-                          <div className="inline-flex items-center gap-1 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[11px] font-medium">
-                            <span className="material-symbols-outlined text-[14px]">smart_toy</span>
-                            YOLOS AI Model
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {!aiResult.detected && (
-                      <div className="mt-2 inline-flex items-center gap-1 bg-secondary-container/40 text-secondary px-2 py-0.5 rounded-full text-[11px] font-medium">
-                        <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                        No significant hazard found
-                      </div>
-                    )}
-
-                  </div>
-                </>
-              )}
-            </div>
+              </div>
+            </main>
           )}
 
-          {/* GPS Location */}
-          <div className="mb-4">
-            <label className="text-label-bold font-bold text-on-surface block mb-2 uppercase tracking-wider text-xs">Current Location</label>
-            <div className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-3 flex items-center gap-3 shadow-sm">
-              <span className="material-symbols-outlined text-primary shrink-0" style={{ fontVariationSettings: gps ? "'FILL' 1" : "'FILL' 0" }}>location_on</span>
-              <div className="flex-1 min-w-0">
-                {gpsLoading ? (
-                  <p className="text-body-sm text-on-surface-variant animate-pulse">Fetching GPS location...</p>
-                ) : gps ? (
-                  <>
-                    <p className="text-body-md text-on-surface font-medium truncate">
-                      {gps.fallback ? 'Mumbai, India (approximate)' : `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`}
-                    </p>
-                    <p className="text-caption text-on-surface-variant">
-                      GPS Accuracy: {gps.accuracy === 9999 ? 'Approximate' : `±${Math.round(gps.accuracy)}m`}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-body-sm text-on-surface-variant">{gpsError || 'Location not captured'}</p>
-                )}
-              </div>
-              {!gpsLoading && (
-                <button onClick={captureGPS} className="text-primary text-sm font-label-bold hover:underline shrink-0">
-                  {gps ? 'Refresh' : 'Retry'}
-                </button>
-              )}
-            </div>
-            {gpsError && (
-              <p className="text-caption text-error mt-1">{gpsError}</p>
-            )}
-          </div>
-
-          {/* Description */}
-          <div className="mb-8 flex-grow">
-            <label className="text-label-bold font-bold text-on-surface block mb-3 uppercase tracking-wider text-xs">Short Description (Optional)</label>
-            <textarea
-              className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-4 text-body-md text-on-surface focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all min-h-[120px] shadow-sm resize-none"
-              placeholder="e.g., Right lane near the traffic light, very hard to see at night..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col gap-3">
-            {!aiResult && !uploading && !detecting && (
-              <button
-                onClick={handleAnalyze}
-                className="w-full bg-secondary text-on-secondary h-[56px] rounded-full font-label-bold text-lg shadow-md hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-              >
-                Analyze Image
-                <span className="material-symbols-outlined">psychology</span>
-              </button>
-            )}
-
-            {(uploading || detecting) && (
-              <button
-                disabled
-                className="w-full bg-surface-container-high text-on-surface-variant h-[56px] rounded-full font-label-bold text-lg flex items-center justify-center gap-3 animate-pulse"
-              >
-                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                {uploading ? `Uploading... ${uploadProgress}%` : 'AI Analyzing...'}
-              </button>
-            )}
-
-            {aiResult && isNotRoad && (
-              <button
-                onClick={handleReset}
-                className="w-full bg-error text-on-error h-[56px] rounded-full font-label-bold text-lg shadow-md hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-              >
-                Re-upload Photo
-                <span className="material-symbols-outlined">restart_alt</span>
-              </button>
-            )}
-
-            {aiResult && !isNotRoad && (
-              <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="w-full bg-primary text-on-primary h-[56px] rounded-full font-label-bold text-lg shadow-[0_4px_14px_rgba(124,58,237,0.39)] hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {submitting ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
-                    Submitting...
-                  </>
-                ) : (
-                  <>
-                    Submit Report
-                    <span className="material-symbols-outlined text-sm">send</span>
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-        </main>
-      )}
-
-      {/* ── SUCCESS STEP ──────────────────────────────────────────────── */}
-      {step === 'success' && (
-        <main className="flex-grow w-full max-w-md mx-auto p-margin-mobile flex flex-col items-center pt-8 pb-32">
-          <div className="w-20 h-20 bg-secondary-container text-on-secondary-container rounded-full flex items-center justify-center mb-4 shadow-[0_8px_24px_rgba(108,248,187,0.3)] animate-bounce-short">
-            <span className="material-symbols-outlined text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-          </div>
-
-          <h2 className="text-h1 font-h1 text-on-surface text-center mb-2">Report Submitted!</h2>
-          <p className="text-body-md text-on-surface-variant text-center mb-6 px-4">
-            You've earned <strong className="text-primary">+50 points</strong> for keeping the roads safe.
-          </p>
-
-          {/* Report Summary Card */}
-          <div className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-5 mb-8 shadow-sm text-left">
-            <h3 className="text-label-bold font-bold text-on-surface uppercase tracking-wider text-xs mb-4 border-b border-outline-variant/20 pb-2">Report Summary</h3>
-
-            {previewUrl && (
-              <div className="w-full h-32 rounded-xl overflow-hidden mb-4">
-                <img src={previewUrl} alt="Reported hazard" className="w-full h-full object-cover" />
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <div>
-                <p className="text-[11px] text-on-surface-variant uppercase tracking-wider mb-1">AI Severity</p>
-                <div className="flex items-center gap-2">
-                  <span className={`w-3 h-3 rounded-full ${severityConfig.dot}`}></span>
-                  <p className="text-body-lg font-bold text-on-surface">{severity} Risk</p>
-                  {aiResult?.confidence > 0 && (
-                    <span className="text-caption text-on-surface-variant">({aiResult.confidence}% confidence)</span>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[11px] text-on-surface-variant uppercase tracking-wider mb-1">Location</p>
-                <p className="text-body-sm text-on-surface">
-                  {gps ? (gps.fallback ? 'Mumbai, India (approximate)' : `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}`) : 'Unknown'}
-                </p>
-              </div>
-
-              {description && (
+          {step === 'preview' && (
+            <main className="flex-1 w-full max-w-md mx-auto p-margin-mobile flex flex-col pt-6 pb-24 overflow-y-auto">
+              <div className="flex items-center gap-4 mb-stack-lg">
+                <button onClick={handleReset} className="w-10 h-10 bg-surface-container rounded-full flex items-center justify-center hover:bg-surface-container-high transition-colors"><span className="material-symbols-outlined">arrow_back</span></button>
                 <div>
-                  <p className="text-[11px] text-on-surface-variant uppercase tracking-wider mb-1">Description</p>
-                  <p className="text-body-md text-on-surface bg-surface p-3 rounded-lg border border-outline-variant/10">{description}</p>
+                  <h2 className="text-h2 font-h2 text-on-surface">Review & Submit</h2>
+                </div>
+              </div>
+
+              {/* Image Preview & AI */}
+              <div className="w-full h-48 bg-surface-container-low rounded-2xl overflow-hidden mb-6 relative">
+                {previewUrl && <img src={previewUrl} className="w-full h-full object-cover" />}
+                {uploading && (
+                  <div className="absolute inset-0 bg-surface/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+                    <div className="w-48 bg-surface-container-high rounded-full h-2"><div className="h-full bg-primary rounded-full transition-all" style={{ width: `${uploadProgress}%` }} /></div>
+                    <span className="text-body-sm font-medium text-on-surface">Uploading... {uploadProgress}%</span>
+                  </div>
+                )}
+                {detecting && !uploading && (
+                  <div className="absolute inset-0 bg-surface/70 backdrop-blur-sm flex flex-col items-center justify-center gap-2">
+                    <div className="w-8 h-8 border-[3px] border-primary border-t-transparent rounded-full animate-spin" />
+                    <span className="text-body-sm font-medium">AI scanning image...</span>
+                  </div>
+                )}
+                {aiResult && !uploading && !detecting && (
+                  <div className="absolute top-3 right-3 bg-primary text-on-primary px-3 py-1 text-xs font-bold rounded-full">AI Scanned</div>
+                )}
+              </div>
+
+              {/* Form Fields */}
+              <div className="space-y-5 flex-1 pb-8">
+                {/* Location */}
+                <div>
+                  <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2 block">Location</label>
+                  <div className="bg-surface-container border border-outline-variant/30 rounded-xl p-3 flex items-center gap-3">
+                    <span className="material-symbols-outlined text-primary">location_on</span>
+                    <input type="text" value={locationName} onChange={e => setLocationName(e.target.value)} className="bg-transparent w-full outline-none text-sm font-medium text-on-surface" placeholder={gpsLoading ? "Fetching GPS..." : "Enter location name"} />
+                    <button onClick={captureGPS} className="text-primary text-xs font-bold shrink-0">{gpsLoading ? '...' : 'Refresh'}</button>
+                  </div>
+                </div>
+
+                {/* Hazard Type & Severity */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2 block">Hazard Type</label>
+                    <select value={hazardType} onChange={e => setHazardType(e.target.value)} className="w-full bg-surface-container border border-outline-variant/30 rounded-xl p-3 text-sm font-medium text-on-surface outline-none focus:border-primary">
+                      {HAZARD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2 block">Severity</label>
+                    <select value={severityOverride} onChange={e => setSeverityOverride(e.target.value)} className="w-full bg-surface-container border border-outline-variant/30 rounded-xl p-3 text-sm font-medium text-on-surface outline-none focus:border-primary">
+                      <option value="" disabled>Select...</option>
+                      {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2 block">Description (Optional)</label>
+                  <textarea value={description} onChange={e => setDescription(e.target.value)} rows="3" className="w-full bg-surface-container border border-outline-variant/30 rounded-xl p-3 text-sm text-on-surface outline-none focus:border-primary resize-none" placeholder="Provide extra details..." />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="mt-auto">
+                {!aiResult && !uploading && !detecting ? (
+                  <button onClick={handleAnalyze} className="w-full bg-secondary text-on-secondary h-14 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md">
+                    Upload & Analyze Image <span className="material-symbols-outlined">auto_awesome</span>
+                  </button>
+                ) : isNotRoad ? (
+                  <button onClick={handleReset} className="w-full bg-error text-on-error h-14 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md">
+                    Invalid Photo - Retry <span className="material-symbols-outlined">restart_alt</span>
+                  </button>
+                ) : (
+                  <button onClick={handleSubmit} disabled={submitting} className="w-full bg-primary text-on-primary h-14 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md disabled:opacity-60">
+                    {submitting ? <div className="w-5 h-5 border-2 border-on-primary border-t-transparent rounded-full animate-spin" /> : 'Submit Complaint'}
+                  </button>
+                )}
+              </div>
+            </main>
+          )}
+
+          {step === 'success' && (
+            <main className="flex-1 w-full max-w-md mx-auto p-margin-mobile flex flex-col items-center pt-8 pb-24">
+              <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mb-4 animate-bounce">
+                <span className="material-symbols-outlined text-4xl">check_circle</span>
+              </div>
+              <h2 className="text-2xl font-black text-on-surface mb-1">Complaint Forwarded!</h2>
+              <p className="text-center text-on-surface-variant mb-6 px-4 text-sm font-medium">
+                Sent to {submissionResult?.municipality || 'Local Municipality'}. A live hazard marker has been added to the map.
+              </p>
+
+              {submissionResult?.rewardEarned > 0 && (
+                <div className="w-full bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 rounded-2xl p-4 mb-8 flex items-center gap-4 animate-[pulse_2s_ease-in-out_infinite]">
+                  <div className="w-12 h-12 bg-yellow-500 text-yellow-900 rounded-full flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined">stars</span>
+                  </div>
+                  <div>
+                    <h3 className="text-yellow-600 font-bold uppercase tracking-wider text-xs mb-1">Civic Reward</h3>
+                    <p className="text-on-surface font-black text-lg">You earned {submissionResult.rewardEarned} Points</p>
+                  </div>
                 </div>
               )}
-
-              <div>
-                <p className="text-[11px] text-on-surface-variant uppercase tracking-wider mb-1">Timestamp</p>
-                <p className="text-body-sm text-on-surface">{new Date().toLocaleString()}</p>
-              </div>
-
-              <div>
-                <p className="text-[11px] text-on-surface-variant uppercase tracking-wider mb-1">Status</p>
-                <div className="inline-flex items-center gap-1 bg-secondary-container/40 text-secondary px-2 py-0.5 rounded-full text-[11px] font-bold">
-                  <span className="material-symbols-outlined text-[14px]">pending</span>
-                  Pending Review
+              
+              <button onClick={() => { setActiveTab('track'); handleReset(); }} className="w-full bg-primary text-on-primary h-14 rounded-xl font-bold mb-4 shadow-md transition-transform hover:-translate-y-1">
+                Track Status
+              </button>
+              <button onClick={() => navigate('/map')} className="w-full bg-surface-container border border-outline-variant/30 text-on-surface h-14 rounded-xl font-bold hover:bg-surface-container-high transition-colors">
+                View on Map
+              </button>
+            </main>
+          )}
+        </>
+      ) : (
+        <main className="flex-1 w-full max-w-md mx-auto p-margin-mobile pt-6 pb-24 overflow-y-auto bg-surface-variant/20">
+          <h2 className="text-xl font-bold mb-6 text-on-surface px-1">My Reports</h2>
+          {loadingReports ? (
+            <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div>
+          ) : myReports.length === 0 ? (
+            <div className="text-center text-on-surface-variant py-10">You haven't reported any hazards yet.</div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {myReports.map(report => (
+                <div key={report._id} className="bg-surface border border-outline-variant/30 rounded-2xl overflow-hidden shadow-sm flex flex-col mb-4">
+                  <div className="flex gap-4 p-4">
+                    <div className="relative shrink-0">
+                      <img src={report.imageUrl} alt="Hazard" className="w-20 h-20 rounded-xl object-cover bg-surface-container" />
+                      {report.rewardEarned > 0 && (
+                        <div className="absolute -top-2 -right-2 bg-yellow-500 text-yellow-900 text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm flex items-center gap-0.5 border border-yellow-400">
+                          <span className="material-symbols-outlined text-[10px]">stars</span>
+                          {report.rewardEarned}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="text-xs font-black tracking-wider uppercase text-on-surface-variant truncate pr-2">{report.hazardType || 'Pothole'}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                          report.status === 'Resolved' ? 'bg-green-500/20 text-green-500' :
+                          report.status === 'Sent to Municipality' ? 'bg-blue-500/20 text-blue-500' :
+                          report.status === 'In Progress' ? 'bg-orange-500/20 text-orange-500' :
+                          report.status === 'Verified' ? 'bg-purple-500/20 text-purple-500' :
+                          'bg-yellow-500/20 text-yellow-600'
+                        }`}>{report.status}</span>
+                      </div>
+                      <h4 className="font-bold text-on-surface text-sm truncate">{report.locationName || 'Unknown Location'}</h4>
+                      <p className="text-xs text-on-surface-variant mt-1 mb-2 truncate">{new Date(report.createdAt).toLocaleDateString()} • {report.severity} Severity</p>
+                      
+                      <div className="flex flex-col gap-1 mt-2 bg-surface-container-low rounded-lg p-2 border border-outline-variant/20">
+                        <div className="flex items-center gap-1.5 text-[11px] text-on-surface-variant">
+                          <span className="material-symbols-outlined text-[14px]">account_balance</span>
+                          <span className="truncate">{report.municipality || 'Pending Assignment'}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-primary font-bold">
+                          <span className="material-symbols-outlined text-[14px]">groups</span>
+                          {report.verificationCount || 0} Crowd Verifications
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
-          </div>
-
-          <div className="w-full flex flex-col gap-3">
-            <button
-              onClick={handleReset}
-              className="w-full bg-primary-container text-on-primary-container h-[56px] rounded-full font-label-bold shadow-sm hover:opacity-90 transition-opacity"
-            >
-              Report Another Hazard
-            </button>
-            <button
-              onClick={() => navigate('/home')}
-              className="w-full bg-transparent border border-outline-variant/30 text-on-surface h-[56px] rounded-full font-label-bold hover:bg-surface-container transition-colors"
-            >
-              Back to Home
-            </button>
-          </div>
+          )}
         </main>
       )}
 

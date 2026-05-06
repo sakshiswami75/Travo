@@ -467,11 +467,29 @@ function MapNavigation() {
     speak('Navigation ended.');
   };
 
-  const submitCrowdVerification = async (isStillActive) => {
-    if (!verificationPopup) return;
-    verifiedPotholes.current.add(verificationPopup.id);
-    toast.success('Thanks for verifying! Trust score updated.', { icon: '🤝' });
-    setVerificationPopup(null);
+  const submitCrowdVerification = async (isStillActive, markerId) => {
+    const id = markerId || (verificationPopup && verificationPopup.id);
+    if (!id) return;
+    
+    // Optimistic UI updates
+    verifiedPotholes.current.add(id);
+    setMarkers(prev => prev.map(m => {
+      if (m.id === id) {
+        return { ...m, verificationCount: (m.verificationCount || 0) + (isStillActive ? 1 : -1) };
+      }
+      return m;
+    }));
+
+    toast.success(isStillActive ? 'Thanks for verifying! Marker confidence increased.' : 'Thanks! Marker will be removed soon.');
+    if (verificationPopup && verificationPopup.id === id) {
+      setVerificationPopup(null);
+    }
+
+    try {
+      await api.put(`/reports/verify/${id}`, { action: isStillActive ? 'exists' : 'resolved' });
+    } catch (err) {
+      console.error('Verification failed', err);
+    }
   };
 
   const clearRoutes = () => {
@@ -618,32 +636,25 @@ function MapNavigation() {
                   <div className="w-[220px]">
                     {marker.imageUrl && <img src={marker.imageUrl} alt="Pothole" className="w-full h-28 object-cover" />}
                     <div className="p-3">
-                      <h3 className="font-bold text-base mb-1 text-on-surface">{marker.severity} Hazard</h3>
-                      <p className="text-xs text-gray-600 mb-2">{marker.location}</p>
+                      <h3 className="font-bold text-base mb-1 text-on-surface uppercase tracking-wide">{marker.type || 'Hazard'} - {marker.severity}</h3>
+                      <p className="text-xs text-gray-600 mb-2">{marker.location || 'Unknown location'}</p>
                       <div className="flex gap-2 mb-2">
-                        <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 text-xs font-bold">{marker.confidence}% verified</span>
+                        <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 text-xs font-bold">{marker.verificationCount || 0} Verifications</span>
+                        {marker.confidence > 0 && <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-700 text-xs font-bold">AI: {marker.confidence}%</span>}
                       </div>
                       
                       {/* Embedded Verification UI */}
-                      {isNavigating && (
-                        <div className="mt-3 pt-3 border-t border-outline-variant/20">
-                          <p className="text-on-surface mb-2 font-medium text-sm leading-snug">Is the pothole still there?</p>
-                          <div className="flex gap-2">
-                            <button onClick={() => {
-                              toast.success('Thanks for verifying!');
-                              setVerificationPopup(null);
-                            }} className="flex-1 py-1.5 bg-[#4CAF50] hover:bg-green-600 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-1 text-xs">
-                              <span className="material-symbols-outlined text-[16px]">thumb_up</span> Yes
-                            </button>
-                            <button onClick={() => {
-                              toast.success('Report marked for resolution.');
-                              setVerificationPopup(null);
-                            }} className="flex-1 py-1.5 bg-[#F44336] hover:bg-red-600 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-1 text-xs">
-                              <span className="material-symbols-outlined text-[16px]">thumb_down</span> No
-                            </button>
-                          </div>
+                      <div className="mt-3 pt-3 border-t border-outline-variant/20">
+                        <p className="text-on-surface mb-2 font-medium text-sm leading-snug">Is the hazard still there?</p>
+                        <div className="flex gap-2">
+                          <button onClick={() => submitCrowdVerification(true, marker.id)} className="flex-1 py-1.5 bg-[#4CAF50] hover:bg-green-600 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-1 text-xs">
+                            <span className="material-symbols-outlined text-[16px]">thumb_up</span> Yes
+                          </button>
+                          <button onClick={() => submitCrowdVerification(false, marker.id)} className="flex-1 py-1.5 bg-[#F44336] hover:bg-red-600 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-1 text-xs">
+                            <span className="material-symbols-outlined text-[16px]">thumb_down</span> No
+                          </button>
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
                 </Popup>

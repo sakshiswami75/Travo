@@ -3,6 +3,112 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --color-secondary-fixed: 111 251 190;
+    --color-surface-dim: 223 215 230;
+    --color-on-tertiary-container: 255 224 205;
+    --color-on-surface: 29 26 36;
+    --color-tertiary: 125 61 0;
+    --color-surface-bright: 254 247 255;
+    --color-surface-container-low: 249 241 255;
+    --color-surface-container-highest: 232 223 238;
+    --color-tertiary-container: 161 81 0;
+    --color-tertiary-fixed: 255 220 198;
+    --color-secondary-fixed-dim: 78 222 163;
+    --color-surface-tint: 115 46 228;
+    --color-background: 254 247 255;
+    --color-on-secondary-fixed-variant: 0 82 54;
+    --color-on-primary: 255 255 255;
+    --color-secondary-container: 108 248 187;
+    --color-on-tertiary: 255 255 255;
+    --color-surface: 254 247 255;
+    --color-primary-fixed: 234 221 255;
+    --color-error-container: 255 218 214;
+    --color-on-primary-container: 237 224 255;
+    --color-on-surface-variant: 74 68 85;
+    --color-on-secondary-fixed: 0 33 19;
+    --color-primary: 99 14 212;
+    --color-error: 186 26 26;
+    --color-outline: 123 116 135;
+    --color-inverse-surface: 51 47 57;
+    --color-on-error: 255 255 255;
+    --color-on-error-container: 147 0 10;
+    --color-surface-variant: 232 223 238;
+    --color-secondary: 0 108 73;
+    --color-inverse-primary: 210 187 255;
+    --color-inverse-on-surface: 246 238 252;
+    --color-on-primary-fixed: 37 0 90;
+    --color-on-tertiary-fixed: 48 20 0;
+    --color-on-background: 29 26 36;
+    --color-on-primary-fixed-variant: 90 0 198;
+    --color-on-tertiary-fixed-variant: 113 55 0;
+    --color-primary-container: 124 58 237;
+    --color-surface-container-lowest: 255 255 255;
+    --color-primary-fixed-dim: 210 187 255;
+    --color-tertiary-fixed-dim: 255 183 132;
+    --color-outline-variant: 204 195 216;
+    --color-surface-container: 243 235 250;
+    --color-on-secondary-container: 0 113 77;
+    --color-surface-container-high: 237 229 244;
+    --color-on-secondary: 255 255 255;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --color-secondary-fixed: 111 251 190;
+    --color-surface-dim: 18 16 24;
+    --color-on-tertiary-container: 255 220 198;
+    --color-on-surface: 238 231 243;
+    --color-tertiary: 255 183 132;
+    --color-surface-bright: 58 53 66;
+    --color-surface-container-low: 30 27 38;
+    --color-surface-container-highest: 52 47 59;
+    --color-tertiary-container: 113 55 0;
+    --color-tertiary-fixed: 255 220 198;
+    --color-secondary-fixed-dim: 78 222 163;
+    --color-surface-tint: 210 187 255;
+    --color-background: 14 12 19;
+    --color-on-secondary-fixed-variant: 0 82 54;
+    --color-on-primary: 255 255 255;
+    --color-secondary-container: 0 82 54;
+    --color-on-tertiary: 48 20 0;
+    --color-surface: 20 18 27;
+    --color-primary-fixed: 234 221 255;
+    --color-error-container: 147 0 10;
+    --color-on-primary-container: 237 224 255;
+    --color-on-surface-variant: 207 196 218;
+    --color-on-secondary-fixed: 0 33 19;
+    --color-primary: 210 187 255;
+    --color-error: 255 180 171;
+    --color-outline: 151 143 164;
+    --color-inverse-surface: 238 231 243;
+    --color-on-error: 105 0 5;
+    --color-on-error-container: 255 218 214;
+    --color-surface-variant: 74 68 85;
+    --color-secondary: 78 222 163;
+    --color-inverse-primary: 99 14 212;
+    --color-inverse-on-surface: 49 45 56;
+    --color-on-primary-fixed: 37 0 90;
+    --color-on-tertiary-fixed: 48 20 0;
+    --color-on-background: 238 231 243;
+    --color-on-primary-fixed-variant: 90 0 198;
+    --color-on-tertiary-fixed-variant: 113 55 0;
+    --color-primary-container: 124 58 237;
+    --color-surface-container-lowest: 24 22 31;
+    --color-primary-fixed-dim: 210 187 255;
+    --color-tertiary-fixed-dim: 255 183 132;
+    --color-outline-variant: 74 68 85;
+    --color-surface-container: 35 31 43;
+    --color-on-secondary-container: 111 251 190;
+    --color-surface-container-high: 43 39 50;
+    --color-on-secondary: 0 57 36;
+  }
+
+  html {
+    background-color: rgb(var(--color-background));
+  }
+
   body {
     @apply bg-surface text-on-surface antialiased;
     font-family: 'Public Sans', sans-serif;
@@ -18,8 +124,12 @@
 }
 
 .depth-level-2 {
-  border: 1px solid #E5E7EB;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  border: 1px solid rgb(var(--color-outline-variant) / 0.3);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.05);
+}
+
+.dark .depth-level-2 {
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.28);
 }
 
 .scanner-overlay {
@@ -45,4 +155,13 @@
       linear-gradient(-15deg, transparent 48%, #ffdad6 49%, #ffdad6 51%, transparent 52%);
   background-size: 150px 150px, 120px 120px, 300px 300px, 200px 200px;
   background-position: 0 0, 50px 50px, 20px 20px, 80px 80px;
+}
+
+.dark .map-bg {
+  background-color: #151923;
+  background-image:
+      linear-gradient(45deg, transparent 48%, rgba(148, 163, 184, 0.22) 49%, rgba(148, 163, 184, 0.22) 51%, transparent 52%),
+      linear-gradient(-45deg, transparent 48%, rgba(148, 163, 184, 0.18) 49%, rgba(148, 163, 184, 0.18) 51%, transparent 52%),
+      linear-gradient(10deg, transparent 48%, rgba(210, 187, 255, 0.36) 49%, rgba(210, 187, 255, 0.36) 51%, transparent 52%),
+      linear-gradient(-15deg, transparent 48%, rgba(78, 222, 163, 0.22) 49%, rgba(78, 222, 163, 0.22) 51%, transparent 52%);
 }

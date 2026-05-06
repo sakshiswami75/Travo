@@ -1,9 +1,73 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import TopAppBar from '../components/TopAppBar';
 import BottomNavBar from '../components/BottomNavBar';
+import { homeService } from '../services/api';
 
 export default function Home() {
+  const [dashboard, setDashboard] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      // For the hackathon, we might want to auto-login as John Doe if no token is found, or redirect to login.
+      // Let's redirect to login for a "proper" flow.
+      navigate('/login');
+      return;
+    }
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [dashRes, alertsRes] = await Promise.all([
+          homeService.getDashboard(),
+          homeService.getAlerts()
+        ]);
+        setDashboard(dashRes.data);
+        setAlerts(alertsRes.data);
+      } catch (err) {
+        console.error(err);
+        setError('Failed to load dashboard data. Please try again.');
+        if (err.response && err.response.status === 401) {
+          localStorage.removeItem('token');
+          navigate('/login');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [navigate]);
+
+  if (loading) {
+    return (
+      <div className="bg-background text-on-background min-h-screen font-body-md pb-32 flex flex-col antialiased">
+        <TopAppBar />
+        <main className="flex-1 w-full max-w-7xl mx-auto px-margin-mobile pt-stack-lg pb-stack-lg md:px-8 flex items-center justify-center">
+          <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full"></div>
+        </main>
+        <BottomNavBar />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-background text-on-background min-h-screen font-body-md pb-32 flex flex-col antialiased">
+        <TopAppBar />
+        <main className="flex-1 w-full max-w-7xl mx-auto px-margin-mobile pt-stack-lg pb-stack-lg md:px-8 text-center text-error">
+          <p>{error}</p>
+        </main>
+        <BottomNavBar />
+      </div>
+    );
+  }
+
   return (
     <div className="bg-background text-on-background min-h-screen font-body-md pb-32 flex flex-col antialiased">
       <TopAppBar />
@@ -11,8 +75,10 @@ export default function Home() {
       <main className="flex-1 w-full max-w-7xl mx-auto px-margin-mobile pt-stack-lg pb-stack-lg md:px-8 space-y-stack-lg">
         {/* Greeting & Date */}
         <section className="mb-stack-lg">
-          <h2 className="text-h1 font-h1 text-on-surface">Hello, Alex</h2>
-          <p className="text-body-md font-body-md text-on-surface-variant mt-1">Thursday, October 26 • Safe travels today.</p>
+          <h2 className="text-h1 font-h1 text-on-surface">Hello, {dashboard?.name.split(' ')[0]}</h2>
+          <p className="text-body-md font-body-md text-on-surface-variant mt-1">
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} • Safe travels today.
+          </p>
         </section>
 
         {/* Top Bento Grid */}
@@ -36,10 +102,10 @@ export default function Home() {
               <div className="relative w-24 h-24 flex items-center justify-center shrink-0">
                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                   <circle className="text-surface-variant" cx="50" cy="50" fill="none" r="45" stroke="currentColor" strokeWidth="8"></circle>
-                  <circle className="text-secondary" cx="50" cy="50" fill="none" r="45" stroke="currentColor" strokeDasharray="282.7" strokeDashoffset="35" strokeLinecap="round" strokeWidth="8"></circle>
+                  <circle className="text-secondary" cx="50" cy="50" fill="none" r="45" stroke="currentColor" strokeDasharray="282.7" strokeDashoffset={282.7 - (282.7 * dashboard?.safetyScore) / 100} strokeLinecap="round" strokeWidth="8"></circle>
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-h2 font-h2 text-on-surface leading-none">92</span>
+                  <span className="text-h2 font-h2 text-on-surface leading-none">{dashboard?.safetyScore}</span>
                   <span className="text-[10px] font-caption text-secondary font-bold uppercase tracking-wider mt-1">Excellent</span>
                 </div>
               </div>
@@ -48,13 +114,13 @@ export default function Home() {
                   <span className="text-caption font-caption text-on-surface-variant flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px]">speed</span> Avg Speed
                   </span>
-                  <p className="text-h3 font-h3 text-on-surface mt-1">42 <span className="text-body-sm font-body-sm text-on-surface-variant">mph</span></p>
+                  <p className="text-h3 font-h3 text-on-surface mt-1">{dashboard?.avgSpeed} <span className="text-body-sm font-body-sm text-on-surface-variant">mph</span></p>
                 </div>
                 <div className="bg-surface-container-low rounded-xl p-3 border border-outline-variant/10">
                   <span className="text-caption font-caption text-on-surface-variant flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px]">route</span> Safe Routes
                   </span>
-                  <p className="text-h3 font-h3 text-on-surface mt-1">100<span className="text-body-sm font-body-sm text-on-surface-variant">%</span></p>
+                  <p className="text-h3 font-h3 text-on-surface mt-1">{dashboard?.routesSafePercentage}<span className="text-body-sm font-body-sm text-on-surface-variant">%</span></p>
                 </div>
               </div>
             </div>
@@ -71,10 +137,10 @@ export default function Home() {
               <div className="absolute inset-0 bg-gradient-to-t from-surface/90 via-surface/20 to-transparent pointer-events-none"></div>
             </div>
             <div className="absolute bottom-4 left-4 right-4 z-10">
-              <button className="w-full bg-surface text-primary border border-outline-variant/20 h-12 rounded-xl flex items-center justify-center gap-2 shadow-sm hover:bg-surface-container transition-colors">
+              <Link to="/map" className="w-full bg-surface text-primary border border-outline-variant/20 h-12 rounded-xl flex items-center justify-center gap-2 shadow-sm hover:bg-surface-container transition-colors">
                 <span className="material-symbols-outlined">navigation</span>
                 <span className="text-label-bold font-label-bold">Find Route</span>
-              </button>
+              </Link>
             </div>
           </div>
         </div>
@@ -105,43 +171,41 @@ export default function Home() {
               <h3 className="text-h3 font-h3 text-on-surface">Nearby Road Alerts</h3>
               <p className="text-body-sm font-body-sm text-on-surface-variant mt-1">Within 5 miles of current location</p>
             </div>
-            <button className="text-primary text-label-bold font-label-bold hover:underline">View All</button>
+            <Link to="/alerts" className="text-primary text-label-bold font-label-bold hover:underline">View All</Link>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-gutter">
-            {/* Alert Card 1 */}
-            <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-2xl p-4 flex gap-4 shadow-sm hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 rounded-full bg-error-container/50 text-error flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined">traffic</span>
-              </div>
-              <div className="flex-1">
-                <div className="flex justify-between items-start">
-                  <h4 className="text-label-bold font-label-bold text-on-surface text-base">Heavy Traffic</h4>
-                  <span className="text-caption font-caption text-on-surface-variant">2 mins ago</span>
+            {alerts.length > 0 ? alerts.map((alert) => (
+              <div key={alert._id} className="bg-surface-container-lowest border border-outline-variant/20 rounded-2xl p-4 flex gap-4 shadow-sm hover:shadow-md transition-shadow">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
+                  alert.severity === 'High' ? 'bg-error-container/50 text-error' :
+                  alert.severity === 'Moderate' ? 'bg-tertiary-container/20 text-tertiary' :
+                  'bg-secondary-container/20 text-secondary'
+                }`}>
+                  <span className="material-symbols-outlined">
+                    {alert.title.toLowerCase().includes('traffic') ? 'traffic' : 
+                     alert.title.toLowerCase().includes('construction') ? 'construction' : 'warning'}
+                  </span>
                 </div>
-                <p className="text-body-sm font-body-sm text-on-surface-variant mt-1">I-95 Northbound. Expect 15 min delays.</p>
-                <div className="mt-3 flex gap-2">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-caption font-bold bg-surface-variant text-on-surface-variant">0.8 mi away</span>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-caption font-bold bg-error-container/30 text-error">High Impact</span>
-                </div>
-              </div>
-            </div>
-            {/* Alert Card 2 */}
-            <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-2xl p-4 flex gap-4 shadow-sm hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 rounded-full bg-tertiary-container/20 text-tertiary flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined">construction</span>
-              </div>
-              <div className="flex-1">
-                <div className="flex justify-between items-start">
-                  <h4 className="text-label-bold font-label-bold text-on-surface text-base">Construction Zone</h4>
-                  <span className="text-caption font-caption text-on-surface-variant">1 hr ago</span>
-                </div>
-                <p className="text-body-sm font-body-sm text-on-surface-variant mt-1">Right lane closed on Elm St.</p>
-                <div className="mt-3 flex gap-2">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-caption font-bold bg-surface-variant text-on-surface-variant">2.1 mi away</span>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-caption font-bold bg-tertiary-container/20 text-tertiary">Moderate</span>
+                <div className="flex-1">
+                  <div className="flex justify-between items-start">
+                    <h4 className="text-label-bold font-label-bold text-on-surface text-base">{alert.title}</h4>
+                  </div>
+                  <p className="text-body-sm font-body-sm text-on-surface-variant mt-1">{alert.description}</p>
+                  <div className="mt-3 flex gap-2">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-caption font-bold bg-surface-variant text-on-surface-variant">{alert.distance}</span>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-caption font-bold ${
+                      alert.severity === 'High' ? 'bg-error-container/30 text-error' :
+                      alert.severity === 'Moderate' ? 'bg-tertiary-container/20 text-tertiary' :
+                      'bg-secondary-container/20 text-secondary'
+                    }`}>{alert.severity} Impact</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )) : (
+              <div className="col-span-full p-4 text-center text-on-surface-variant bg-surface-container-lowest border border-outline-variant/20 rounded-2xl">
+                No nearby alerts at this time.
+              </div>
+            )}
           </div>
         </section>
       </main>

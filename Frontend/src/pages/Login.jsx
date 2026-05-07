@@ -10,7 +10,6 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState('Citizen'); // Default role
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -25,7 +24,7 @@ export default function Login() {
         toast.success('Welcome back to Travo', { id: toastId });
       } else {
         if (!name.trim()) throw new Error('Full name is required');
-        res = await authService.signup({ name, email, password, role });
+        res = await authService.signup({ name, email, password });
         toast.success('Account created successfully!', { id: toastId });
       }
 
@@ -103,25 +102,6 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Segmented Role Selection */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-gray-300 uppercase tracking-wider pl-1">Select Role</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div 
-                    onClick={() => setRole('Citizen')}
-                    className={`cursor-pointer rounded-xl p-3 border flex items-center justify-center gap-2 transition-all duration-300 ${role === 'Citizen' ? 'bg-primary/20 border-primary text-white shadow-[inset_0_0_15px_rgba(124,58,237,0.2)]' : 'bg-black/40 border-white/5 text-gray-400 hover:bg-black/60 hover:border-white/20'}`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">group</span>
-                    <span className="font-bold text-sm">Citizen</span>
-                  </div>
-                  <div 
-                    onClick={() => setRole('Driver')}
-                    className={`cursor-pointer rounded-xl p-3 border flex items-center justify-center gap-2 transition-all duration-300 ${role === 'Driver' ? 'bg-blue-500/20 border-blue-500 text-white shadow-[inset_0_0_15px_rgba(59,130,246,0.2)]' : 'bg-black/40 border-white/5 text-gray-400 hover:bg-black/60 hover:border-white/20'}`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">directions_car</span>
-                    <span className="font-bold text-sm">Driver</span>
-                  </div>
-                </div>
               </div>
             </>
           )}

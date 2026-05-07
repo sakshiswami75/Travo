@@ -12,7 +12,7 @@ const generateToken = (id) => {
 // @route   POST /api/auth/signup
 // @desc    Register a new user
 router.post('/signup', async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password } = req.body;
   try {
     const userExists = await User.findOne({ email });
     if (userExists) return res.status(400).json({ message: 'User already exists' });
@@ -23,17 +23,15 @@ router.post('/signup', async (req, res) => {
     const user = await User.create({ 
       name, 
       email, 
-      password: hashedPassword,
-      role: role || 'Citizen'
+      password: hashedPassword
     });
 
-    console.log(`[AUTH] New user successfully saved to MongoDB: ${user.email} as ${user.role}`);
+    console.log(`[AUTH] New user successfully saved to MongoDB: ${user.email}`);
 
     res.status(201).json({
       _id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role,
       safetyScore: user.safetyScore,
       token: generateToken(user._id)
     });
@@ -54,7 +52,6 @@ router.post('/login', async (req, res) => {
         _id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
         safetyScore: user.safetyScore,
         token: generateToken(user._id)
       });

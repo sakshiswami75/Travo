@@ -19,11 +19,6 @@ const userSchema = new mongoose.Schema({
     required: [true, 'Please add a password'],
     select: false
   },
-  role: {
-    type: String,
-    enum: ['Citizen', 'Driver'],
-    default: 'Citizen'
-  },
   safetyScore: {
     type: Number,
     default: 100

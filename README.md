@@ -2,7 +2,7 @@
 
 > AI-powered smart road intelligence for safer, smoother travel.
 
-Travo is a mobile-first road safety platform that turns every driver into a real-time road guardian. Users can scan potholes and road hazards, submit verified complaints, receive AI safety alerts, compare safer routes, and earn reward points for improving civic road data.
+Travo is a mobile-first road safety platform that turns every driver into a real-time road guardian. Users can scan potholes and road hazards, submit verified complaints, receive AI safety alerts, com[...]
 
 [Live Demo](https://travo-75.vercel.app) | [Frontend](./Frontend) | [Backend](./Backend)
 
@@ -25,11 +25,15 @@ Road damage is often reported late, verified slowly, and ignored by navigation s
   <img src="./docs/screenshots/potholes.jpeg" width="230" alt="AI pothole detection scanner" />
 </p>
 
+<p></p>
+
 <p align="center">
   <img src="./docs/screenshots/submit-pothole.jpeg" width="230" alt="Submit road hazard report" />
   <img src="./docs/screenshots/safety.jpeg" width="230" alt="Route safety intelligence" />
   <img src="./docs/screenshots/alerts.jpeg" width="230" alt="AI road intelligence alerts center" />
 </p>
+
+<p></p>
 
 <p align="center">
   <img src="./docs/screenshots/profile-rewards.jpeg" width="230" alt="Driver profile and reward points" />

@@ -216,6 +216,75 @@ function MapNavigation() {
     sourceQueryRef.current = sourceQuery;
   }, [sourceQuery]);
 
+  // ── 1. Aggressive GPS Acquisition (Restored after merge) ──
+  useEffect(() => {
+    fetchMapData();
+    
+    if (!navigator.geolocation) {
+      toast.error('Geolocation not supported');
+      return;
+    }
+
+    const onLocationSuccess = async (pos) => {
+      const { latitude, longitude, accuracy } = pos.coords;
+      const loc = [latitude, longitude];
+      console.log(`[GPS] Fix acquired: ${latitude}, ${longitude} (±${accuracy}m)`);
+      
+      setUserLocation(loc);
+
+      // If we haven't locked a high-accuracy center yet, keep following the GPS
+      if (!initialLocationSetRef.current) {
+        setMapCenter(loc);
+        setSourceCoords(loc);
+
+        // If accuracy is good (less than 150m), lock it so it stops jumping
+        if (accuracy < 150) {
+          initialLocationSetRef.current = true;
+          console.log('[GPS] High accuracy fix locked.');
+        }
+
+        // Update UI Label
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`);
+          const data = await res.json();
+          if (data && data.address) {
+            const city = data.address.city || data.address.town || data.address.village || data.address.suburb || 'Location';
+            setSourceQuery(`Your Location (${city})`);
+          }
+        } catch(e) {}
+      } else if (sourceQueryRef.current.includes('Your Location') && destCoords) {
+        // If we already have a route but our 'Your Location' just shifted significantly (more than 500m)
+        // re-calculate the route automatically from the new precise location
+        const dist = Math.hypot(latitude - sourceCoords[0], longitude - sourceCoords[1]);
+        if (dist > 0.005) { // ~500 meters
+          console.log('[GPS] Location shift detected while routing. Updating route...');
+          setSourceCoords(loc);
+          generateRoutesAuto(loc, destCoords);
+        }
+      }
+    };
+
+    const onLocationError = (err) => {
+      console.warn('[GPS] Error:', err.code, err.message);
+      if (!userLocation) toast.error('Waiting for GPS signal...');
+    };
+
+    // Quick initial check
+    navigator.geolocation.getCurrentPosition(onLocationSuccess, onLocationError, { enableHighAccuracy: true });
+
+    // Continuous tracking
+    const id = navigator.geolocation.watchPosition(onLocationSuccess, onLocationError, { 
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0 
+    });
+    watchIdRef.current = id;
+
+    return () => {
+      if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
+  }, []);
+
   // ── Voice Alert Helper ──
   const speak = (text) => {
     if (!voiceEnabled || !('speechSynthesis' in window)) return;
@@ -281,20 +350,10 @@ function MapNavigation() {
   }, []);
 
   useEffect(() => {
-    if (!focusReport || !Number.isFinite(Number(focusReport.lat)) || !Number.isFinite(Number(focusReport.lng))) return;
+    sourceQueryRef.current = sourceQuery;
+  }, [sourceQuery]);
 
-    const coords = [Number(focusReport.lat), Number(focusReport.lng)];
-    const timeoutId = window.setTimeout(() => {
-      setMapCenter(coords);
-      setMapZoom(17);
-      fetchMapData();
-    }, 0);
-    toast.success('Report location shown on map');
-
-    return () => window.clearTimeout(timeoutId);
-  }, [focusReport]);
-
-  // ── 1. Aggressive GPS Acquisition ──
+  // ── 1. Aggressive GPS Acquisition (Essential Fix) ──
   useEffect(() => {
     fetchMapData();
     
@@ -320,8 +379,7 @@ function MapNavigation() {
           console.log('[GPS] High accuracy fix locked.');
         }
 
-        // DO NOT automatically set source location or auto-fill the search bar.
-        // Wait for the user to explicitly click "Use My Current Location".
+        // Wait for the user to explicitly click "Use My Current Location" or "Your Location"
       } else if (sourceQueryRef.current.includes('Your Location') && destCoords && sourceCoords) {
         // If we already have a route but our 'Your Location' just shifted significantly (more than 500m)
         // re-calculate the route automatically from the new precise location
@@ -354,6 +412,20 @@ function MapNavigation() {
       if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!focusReport || !Number.isFinite(Number(focusReport.lat)) || !Number.isFinite(Number(focusReport.lng))) return;
+
+    const coords = [Number(focusReport.lat), Number(focusReport.lng)];
+    const timeoutId = window.setTimeout(() => {
+      setMapCenter(coords);
+      setMapZoom(17);
+      fetchMapData();
+    }, 0);
+    toast.success('Report location shown on map');
+
+    return () => window.clearTimeout(timeoutId);
+  }, [focusReport]);
 
   // ── Generate Smart Routes (Auto-Triggered) ──
   const generateRoutesAuto = async (startLoc, endLoc) => {
@@ -858,7 +930,7 @@ function MapNavigation() {
 
         {/* Map Floating Controls */}
         {!isNavigating && (
-          <div className={`absolute right-4 flex flex-col gap-3 z-[500] transition-all duration-300 ${routes.length > 0 ? 'bottom-[350px]' : 'bottom-[120px]'}`}>
+          <div className={`absolute right-4 flex flex-col gap-3 z-[500] transition-all duration-300 ${routes.length > 0 ? 'bottom-[420px]' : 'bottom-[90px]'}`}>
             <button onClick={() => setShowHeatmap(!showHeatmap)} className={`w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all ${showHeatmap ? 'bg-primary text-on-primary' : 'bg-surface text-on-surface-variant'}`}>
               <span className="material-symbols-outlined">layers</span>
             </button>
@@ -880,7 +952,7 @@ function MapNavigation() {
             <motion.div 
               key="route-selection-sheet"
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="absolute bottom-0 left-0 right-0 z-[1000] bg-surface rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.15)] flex flex-col max-h-[85vh] md:max-h-[60vh]"
+              className="absolute bottom-[72px] left-0 right-0 z-[1000] bg-surface rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.15)] flex flex-col max-h-[75vh] md:max-h-[60vh]"
             >
               <div className="w-full flex justify-center py-3">
                 <div className="w-12 h-1.5 bg-outline-variant/40 rounded-full"></div>
@@ -905,59 +977,59 @@ function MapNavigation() {
                 
                 <h2 className="text-xl font-h2 font-bold mb-4 px-1">Multiple Routes</h2>
                 
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
                   {routes.map((r) => (
                     <div key={r.id} onClick={() => setSelectedRoute(r)} 
-                         className={`rounded-2xl p-4 flex flex-col cursor-pointer transition-all border-2 
+                         className={`rounded-xl p-3 flex flex-col cursor-pointer transition-all border-2 
                          ${selectedRoute?.id === r.id ? (r.type === 'safest' ? 'border-[#4CAF50] bg-[#4CAF50]/10' : r.type === 'fastest' ? 'border-[#2196F3] bg-[#2196F3]/10' : 'border-[#FF9800] bg-[#FF9800]/10') : 'border-outline-variant/20 hover:bg-surface-container'}`}>
                       
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-sm
+                      <div className="flex justify-between items-center mb-1.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm
                                ${selectedRoute?.id === r.id ? (r.type === 'safest' ? 'bg-[#4CAF50] text-white' : r.type === 'fastest' ? 'bg-[#2196F3] text-white' : 'bg-[#FF9800] text-white') : 'bg-surface-container-high text-on-surface-variant'}`}>
-                            <span className="material-symbols-outlined">{r.type === 'safest' ? 'health_and_safety' : r.type === 'fastest' ? 'bolt' : 'alt_route'}</span>
+                            <span className="material-symbols-outlined text-[18px]">{r.type === 'safest' ? 'health_and_safety' : r.type === 'fastest' ? 'bolt' : 'alt_route'}</span>
                           </div>
                           <div>
-                            <div className="text-lg font-black text-on-surface capitalize tracking-wide">{r.type === 'safest' ? 'Ride Comfort Mode' : r.type === 'fastest' ? 'Fastest Route' : 'Alternate Route'}</div>
-                            <div className="text-xs text-on-surface-variant font-bold uppercase tracking-wider">{r.type === 'safest' ? 'AI Optimized Safety' : 'Time Optimized'}</div>
+                            <div className="text-base font-black text-on-surface capitalize tracking-wide">{r.type === 'safest' ? 'Ride Comfort Mode' : r.type === 'fastest' ? 'Fastest Route' : 'Alternate Route'}</div>
+                            <div className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">{r.type === 'safest' ? 'AI Optimized Safety' : 'Time Optimized'}</div>
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className={`text-2xl font-black ${selectedRoute?.id === r.id ? 'text-on-surface' : 'text-on-surface-variant'}`}>{formatTime(r.duration)}</div>
-                          <div className="text-xs text-on-surface-variant font-black">{r.distance} km</div>
+                          <div className={`text-xl font-black ${selectedRoute?.id === r.id ? 'text-on-surface' : 'text-on-surface-variant'}`}>{formatTime(r.duration)}</div>
+                          <div className="text-[11px] text-on-surface-variant font-black">{r.distance} km</div>
                         </div>
                       </div>
 
                       {/* Route Metrics Differentiated by Type */}
-                      <div className="bg-surface-container-lowest rounded-xl p-3 flex flex-wrap gap-2 mt-2">
+                      <div className="bg-surface-container-lowest rounded-lg p-2 flex flex-wrap gap-1.5 mt-1">
                         {r.type === 'fastest' ? (
                           <>
-                            <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-surface-container rounded-md">
-                              <span className={`material-symbols-outlined text-[14px] ${r.trafficLevel === 'Heavy' ? 'text-red-500' : r.trafficLevel === 'Moderate' ? 'text-orange-500' : 'text-green-500'}`}>traffic</span>
-                              {r.trafficLevel} Traffic
+                            <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-surface-container rounded-md">
+                              <span className={`material-symbols-outlined text-[12px] ${r.trafficLevel === 'Heavy' ? 'text-red-500' : r.trafficLevel === 'Moderate' ? 'text-orange-500' : 'text-green-500'}`}>traffic</span>
+                              {r.trafficLevel}
                             </div>
-                            <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-surface-container rounded-md">
-                              <span className="material-symbols-outlined text-[14px] text-blue-500">local_gas_station</span>
+                            <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-surface-container rounded-md">
+                              <span className="material-symbols-outlined text-[12px] text-blue-500">local_gas_station</span>
                               {r.fuelEfficiency}
                             </div>
-                            <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-error-container text-error rounded-md">
-                              <span className="material-symbols-outlined text-[14px]">warning</span>
+                            <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-error-container text-error rounded-md">
+                              <span className="material-symbols-outlined text-[12px]">warning</span>
                               {r.hazards} Hazards
                             </div>
                           </>
                         ) : (
                           <>
-                            <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-[#4CAF50]/20 text-green-700 rounded-md">
-                              <span className="material-symbols-outlined text-[14px]">shield</span>
-                              AI Score: {r.score}/100
+                            <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-[#4CAF50]/20 text-green-700 rounded-md">
+                              <span className="material-symbols-outlined text-[12px]">shield</span>
+                              AI: {r.score}/100
                             </div>
-                            <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-surface-container rounded-md">
-                              <span className="material-symbols-outlined text-[14px] text-purple-500">airline_seat_recline_extra</span>
+                            <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-surface-container rounded-md">
+                              <span className="material-symbols-outlined text-[12px] text-purple-500">airline_seat_recline_extra</span>
                               {r.comfortRating}
                             </div>
                             {getHazardReductionText(r) && (
-                              <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 bg-surface-container rounded-md">
-                                <span className="material-symbols-outlined text-[14px] text-orange-500">reduce_capacity</span>
+                              <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-surface-container rounded-md">
+                                <span className="material-symbols-outlined text-[12px] text-orange-500">reduce_capacity</span>
                                 {getHazardReductionText(r)}
                               </div>
                             )}
@@ -968,7 +1040,7 @@ function MapNavigation() {
                   ))}
                 </div>
 
-                <button onClick={startNavigation} className="w-full mt-6 py-4 rounded-xl bg-primary text-on-primary font-bold text-lg shadow-lg shadow-primary/20 hover:shadow-xl hover:-translate-y-0.5 transition-all flex justify-center items-center gap-2">
+                <button onClick={startNavigation} className="w-full mt-4 py-3.5 rounded-xl bg-primary text-on-primary font-bold text-base shadow-lg shadow-primary/20 hover:shadow-xl hover:-translate-y-0.5 transition-all flex justify-center items-center gap-2">
                   <span className="material-symbols-outlined">navigation</span>
                   Start Navigation
                 </button>
@@ -1003,7 +1075,7 @@ function MapNavigation() {
       </main>
       
       {/* Footer ALWAYS visible unless in immersive navigation mode */}
-      {!isNavigating && !routes.length && <BottomNavBar />}
+      {!isNavigating && <BottomNavBar />}
     </div>
   );
 }

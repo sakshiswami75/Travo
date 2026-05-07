@@ -188,18 +188,38 @@ router.get('/alerts', async (req, res) => {
 router.get('/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ message: 'Query is required' });
+  
   try {
-    const resp = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`, {
-      headers: { 'User-Agent': 'TravoMapSystem/1.0' }
+    console.log(`[MAPS] Searching for: "${q}"`);
+    const resp = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`, {
+      headers: { 
+        'User-Agent': 'TravoRoadSafetyApp/1.1 (contact: admin@travo.com)',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9'
+      },
+      timeout: 5000
     });
+
+    if (!Array.isArray(resp.data)) {
+      console.error('[MAPS] Nominatim returned non-array:', resp.data);
+      return res.json([]);
+    }
+
     const results = resp.data.map(item => ({
       name: item.display_name,
       lat: parseFloat(item.lat),
       lng: parseFloat(item.lon)
     }));
+    
+    console.log(`[MAPS] Found ${results.length} results for: "${q}"`);
     res.json(results);
   } catch (error) {
-    res.status(500).json({ message: 'Geocoding failed' });
+    console.error('[MAPS] Geocoding Error:', error.response?.data || error.message);
+    res.status(500).json({ 
+      message: 'Geocoding failed', 
+      error: error.message,
+      details: error.response?.data
+    });
   }
 });
 

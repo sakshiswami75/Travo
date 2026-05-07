@@ -232,7 +232,14 @@ export default function Complaints() {
   
   return (
     <div className="bg-background text-on-background font-body-md min-h-[100dvh] flex flex-col relative antialiased">
-      <TopAppBar title="Report & Track" />
+      <TopAppBar 
+        title={activeTab === 'track' ? "Track Status" : step !== 'select' ? "Hazard Analysis" : "Report & Track"} 
+        showBack={step !== 'select' || activeTab !== 'report'}
+        onBack={() => {
+          if (step !== 'select') handleReset();
+          else if (activeTab === 'track') setActiveTab('report');
+        }}
+      />
 
       {/* Tabs */}
       <div className="flex w-full bg-surface border-b border-outline-variant/20 pt-2 px-4 sticky top-[64px] z-[50]">

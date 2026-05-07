@@ -91,6 +91,26 @@ export default {
           "h2": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
           "label-bold": ["14px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
           "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}]
+      },
+      "keyframes": {
+        "fade-in-up": {
+          "0%": { opacity: "0", transform: "translateY(20px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" }
+        },
+        "fade-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" }
+        },
+        "loading-bar": {
+          "0%": { width: "0%", opacity: "1" },
+          "50%": { width: "50%", opacity: "1" },
+          "100%": { width: "100%", opacity: "0" }
+        }
+      },
+      "animation": {
+        "fade-in-up": "fade-in-up 0.8s ease-out forwards",
+        "fade-in": "fade-in 0.8s ease-out forwards",
+        "loading-bar": "loading-bar 1.5s cubic-bezier(0.65, 0, 0.35, 1) infinite"
       }
     }
   },

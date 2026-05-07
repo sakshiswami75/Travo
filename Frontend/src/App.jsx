@@ -8,6 +8,7 @@ import Scan from './pages/Scan';
 import Alerts from './pages/Alerts';
 import History from './pages/History';
 import Profile from './pages/Profile';
+import Rewards from './pages/Rewards';
 import Complaints from './pages/Complaints';
 import ThemeProvider from './components/ThemeProvider';
 import { Toaster } from 'react-hot-toast';
@@ -26,6 +27,7 @@ function App() {
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/history" element={<History />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/rewards" element={<Rewards />} />
         <Route path="/complaints" element={<Complaints />} />
         <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import logo from '../assets/logo.png';
+import Logo from '../components/Logo';
 
 export default function Splash() {
   const navigate = useNavigate();
@@ -8,41 +8,54 @@ export default function Splash() {
   useEffect(() => {
     const timer = setTimeout(() => {
       navigate('/login');
-    }, 2500);
+    }, 2800);
     return () => clearTimeout(timer);
   }, [navigate]);
 
   return (
-    <div className="h-screen bg-background flex flex-col justify-between items-center relative overflow-hidden font-body-md text-body-md text-on-background">
-      {/* Subtle Gradient Background */}
-      <div className="absolute inset-0 pointer-events-none z-0 bg-gradient-to-br from-surface-bright via-background to-surface-container-low"></div>
-      <div className="absolute inset-0 pointer-events-none z-0 opacity-40 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.1)_0%,transparent_50%)]"></div>
+    <div className="h-screen bg-black flex flex-col justify-center items-center relative overflow-hidden font-sans">
       
-      {/* Top Spacer */}
-      <div className="flex-1 w-full flex flex-col items-center justify-center z-10 p-margin-mobile">
-        {/* Logo Container */}
-        <div className="w-32 h-32 md:w-40 md:h-40 rounded-3xl bg-surface shadow-[0_12px_24px_-8px_rgba(124,58,237,0.15)] flex items-center justify-center mb-stack-lg border border-outline-variant/30">
-          <img src={logo} alt="Travo Logo" className="w-24 h-24 md:w-32 md:h-32 object-contain" />
-        </div>
-        {/* Typography */}
-        <div className="text-center max-w-sm">
-          <h1 className="font-h1 text-h1 text-on-background mb-stack-sm tracking-tight">Travo</h1>
-          <p className="font-body-lg text-body-lg text-on-surface-variant font-light">Smart Roads. Safer Journeys.</p>
-        </div>
+      {/* Background Deep Space/Tech Glow Effects */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '4s' }}></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '5s' }}></div>
+        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,transparent_0%,#000000_100%)] opacity-80"></div>
       </div>
       
-      {/* Bottom Loading Area */}
-      <div className="w-full flex flex-col items-center justify-end z-10 pb-stack-lg px-margin-mobile mb-8">
-        {/* Loading Indicator */}
-        <div className="flex flex-col items-center gap-stack-sm">
-          {/* Spinner */}
-          <svg className="animate-spin -ml-1 mr-3 h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          <span className="font-caption text-caption text-outline uppercase tracking-widest mt-2">Initializing</span>
+      {/* Central Identity Container */}
+      <div className="z-10 flex flex-col items-center justify-center transform transition-all animate-fade-in-up">
+        
+        {/* Animated Logo Container */}
+        <div className="relative mb-6">
+          <div className="absolute inset-0 bg-primary/30 rounded-[32px] blur-xl animate-pulse" style={{ animationDuration: '2s' }}></div>
+          <div className="relative bg-surface-container-lowest/10 backdrop-blur-md border border-white/10 p-5 rounded-[32px] shadow-2xl">
+            <Logo size={100} className="drop-shadow-[0_0_15px_rgba(124,58,237,0.8)]" />
+          </div>
+        </div>
+
+        {/* Brand Typography */}
+        <div className="text-center flex flex-col items-center gap-2">
+          <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 tracking-tight drop-shadow-lg">
+            TRAVO
+          </h1>
+          <div className="flex items-center gap-3 opacity-0 animate-fade-in" style={{ animationDelay: '0.8s', animationFillMode: 'forwards' }}>
+            <div className="w-8 h-[1px] bg-primary"></div>
+            <p className="text-sm font-semibold tracking-[0.2em] text-primary-fixed uppercase drop-shadow-md">
+              AI Smart Road Intelligence
+            </p>
+            <div className="w-8 h-[1px] bg-primary"></div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Bottom Loading Bar */}
+      <div className="absolute bottom-12 w-48 z-10 opacity-0 animate-fade-in" style={{ animationDelay: '1.2s', animationFillMode: 'forwards' }}>
+        <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-primary to-blue-500 rounded-full animate-loading-bar origin-left"></div>
         </div>
       </div>
+
     </div>
   );
 }

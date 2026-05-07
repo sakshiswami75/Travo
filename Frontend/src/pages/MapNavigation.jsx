@@ -638,7 +638,12 @@ function MapNavigation() {
 
   return (
     <div className="bg-surface text-on-surface h-[100dvh] w-full overflow-hidden flex flex-col relative font-sans">
-      {!isNavigating && <TopAppBar />}
+      {!isNavigating && (
+        <TopAppBar 
+          showBack={routes.length > 0} 
+          onBack={routes.length > 0 ? clearRoutes : undefined} 
+        />
+      )}
 
       <main className={`flex-1 relative w-full h-full overflow-hidden`}>
         

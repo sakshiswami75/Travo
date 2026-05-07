@@ -68,12 +68,61 @@ router.post('/login', async (req, res) => {
 });
 
 // @route   GET /api/auth/me
-// @desc    Get user profile
+// @desc    Get user profile with live dynamic stats
 router.get('/me', protect, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
-    res.json(user);
+    const user = await User.findById(req.user.id).lean();
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const Report = require('../models/Report');
+    
+    // Calculate live dynamic stats
+    const userReports = await Report.find({ userId: req.user.id });
+    
+    let potholesReported = 0;
+    let hazardsVerified = 0;
+    let municipalityResolved = 0;
+    let rewardPoints = user.rewardPoints || 0; // Baseline
+    
+    userReports.forEach(r => {
+      potholesReported += 1;
+      rewardPoints += 50; // +50 per report
+      
+      if (r.verificationCount > 0) {
+        hazardsVerified += r.verificationCount;
+        rewardPoints += (r.verificationCount * 10); // +10 per verification received
+      }
+
+      if (r.status === 'Resolved') {
+        municipalityResolved += 1;
+        rewardPoints += 100; // +100 for resolved
+      }
+    });
+
+    // Simulate safe km and routes based on activity level
+    const safeKm = (userReports.length * 15) + (Math.floor(Math.random() * 50) + 100);
+    const routesCompleted = (userReports.length * 3) + (Math.floor(Math.random() * 10) + 20);
+
+    // Calculate dynamic driver level
+    let driverLevel = 'Beginner Driver';
+    if (rewardPoints > 2000) driverLevel = 'Elite Contributor';
+    else if (rewardPoints > 1000) driverLevel = 'Safety Hero';
+    else if (rewardPoints > 500) driverLevel = 'Road Guardian';
+
+    res.json({
+      ...user,
+      stats: {
+        potholesReported,
+        hazardsVerified,
+        municipalityResolved,
+        safeKm,
+        routesCompleted
+      },
+      rewardPoints,
+      driverLevel
+    });
   } catch (error) {
+    console.error("Profile Fetch Error:", error);
     res.status(500).json({ message: error.message });
   }
 });

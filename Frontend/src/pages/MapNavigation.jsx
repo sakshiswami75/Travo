@@ -1010,7 +1010,7 @@ function MapNavigation() {
                         {r.type === 'fastest' ? (
                           <>
                             <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-surface-container rounded-md">
-                              <span className={`material-symbols-outlined text-[12px] ${r.trafficLevel === 'Heavy' ? 'text-red-500' : r.trafficLevel === 'Moderate' ? 'text-orange-500' : 'text-green-500'}`}>traffic</span>
+                              <span className={`material-symbols-outlined text-[12px] ${r.trafficLevel.includes('Heavy') ? 'text-red-500' : r.trafficLevel.includes('Moderate') ? 'text-orange-500' : 'text-green-500'}`}>traffic</span>
                               {r.trafficLevel}
                             </div>
                             <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-surface-container rounded-md">

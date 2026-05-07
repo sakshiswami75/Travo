@@ -20,20 +20,20 @@ Road damage is often reported late, verified slowly, and ignored by navigation s
 ## Product Screenshots
 
 <p align="center">
-  <img src="./docs/screenshots/login.png" width="230" alt="Travo secure login screen" />
-  <img src="./docs/screenshots/home.png" width="230" alt="Travo safety score dashboard" />
-  <img src="./docs/screenshots/report.png" width="230" alt="AI scanned road hazard report form" />
+  <img src="./docs/screenshots/login.jpeg" width="230" alt="Travo secure login screen" />
+  <img src="./docs/screenshots/home.jpeg" width="230" alt="Travo safety score dashboard" />
+  <img src="./docs/screenshots/potholes.jpeg" width="230" alt="AI pothole detection scanner" />
 </p>
 
 <p align="center">
-  <img src="./docs/screenshots/map.png" width="230" alt="Hazard marker and verification map" />
-  <img src="./docs/screenshots/routes.png" width="230" alt="AI route options and ride comfort mode" />
-  <img src="./docs/screenshots/alerts.png" width="230" alt="AI road intelligence alerts center" />
+  <img src="./docs/screenshots/submit-pothole.jpeg" width="230" alt="Submit road hazard report" />
+  <img src="./docs/screenshots/safety.jpeg" width="230" alt="Route safety intelligence" />
+  <img src="./docs/screenshots/alerts.jpeg" width="230" alt="AI road intelligence alerts center" />
 </p>
 
 <p align="center">
-  <img src="./docs/screenshots/profile.png" width="230" alt="Driver profile and reward points" />
-  <img src="./docs/screenshots/navigation.png" width="230" alt="Live route tracking with traffic warnings" />
+  <img src="./docs/screenshots/profile-rewards.jpeg" width="230" alt="Driver profile and reward points" />
+  <img src="./docs/screenshots/Traffic-alert.jpeg" width="230" alt="Live traffic and hazard warnings" />
 </p>
 
 ## Core Features

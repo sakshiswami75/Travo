@@ -75,41 +75,28 @@ export default function Complaints() {
   };
 
   // GPS + Reverse Geocode
-  const captureGPS = useCallback(() => {
-    if (!navigator.geolocation) {
-      setGpsError('Geolocation not supported by this browser');
+  const geocodeLocation = async () => {
+    if (!locationName.trim()) {
+      toast.error('Please type a location first');
       return;
     }
     setGpsLoading(true);
-    setGpsError(null);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setGps({ lat, lng, accuracy: pos.coords.accuracy });
-        
-        try {
-          const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-          if (res.data && res.data.display_name) {
-            const shortName = res.data.display_name.split(',').slice(0, 3).join(',');
-            setLocationName(shortName);
-          }
-        } catch (e) {
-          console.warn('Reverse geocode failed', e);
-          setLocationName(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-        }
-        setGpsLoading(false);
-      },
-      (err) => {
-        console.warn('GPS error:', err.message);
-        setGpsError('Location access denied. Please manually describe the location.');
-        setGps({ lat: 19.0760, lng: 72.8777, accuracy: 9999, fallback: true });
-        setLocationName('Mumbai, India (Approximate)');
-        setGpsLoading(false);
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
-  }, []);
+    try {
+      const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationName)}&limit=1`);
+      if (res.data && res.data.length > 0) {
+        const { lat, lon, display_name } = res.data[0];
+        setGps({ lat: parseFloat(lat), lng: parseFloat(lon) });
+        setLocationName(display_name.split(',').slice(0, 3).join(','));
+        toast.success('Location found and pinned!');
+      } else {
+        toast.error('Could not find that location. Try adding city name.');
+      }
+    } catch (e) {
+      toast.error('Geocoding failed');
+    } finally {
+      setGpsLoading(false);
+    }
+  };
 
   const handleFileSelected = (file) => {
     if (!file) return;
@@ -126,8 +113,11 @@ export default function Complaints() {
     setPreviewUrl(URL.createObjectURL(file));
     setAiResult(null);
     setCloudinaryUrl(null);
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setAiResult(null);
+    setCloudinaryUrl(null);
     setStep('preview');
-    captureGPS();
   };
 
   const handleAnalyze = async () => {
@@ -364,8 +354,14 @@ export default function Complaints() {
                   <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2 block">Location</label>
                   <div className="bg-surface-container border border-outline-variant/30 rounded-xl p-3 flex items-center gap-3">
                     <span className="material-symbols-outlined text-primary">location_on</span>
-                    <input type="text" value={locationName} onChange={e => setLocationName(e.target.value)} className="bg-transparent w-full outline-none text-sm font-medium text-on-surface" placeholder={gpsLoading ? "Fetching GPS..." : "Enter location name"} />
-                    <button onClick={captureGPS} className="text-primary text-xs font-bold shrink-0">{gpsLoading ? '...' : 'Refresh'}</button>
+                    <input 
+                      type="text" 
+                      value={locationName} 
+                      onChange={e => setLocationName(e.target.value)} 
+                      className="bg-transparent w-full outline-none text-sm font-medium text-on-surface" 
+                      placeholder="Type location (e.g. MG Road, Pune)" 
+                    />
+                    <button onClick={geocodeLocation} className="bg-primary text-on-primary px-3 py-1 rounded-lg text-[10px] font-bold shrink-0">{gpsLoading ? '...' : 'Find'}</button>
                   </div>
                 </div>
 

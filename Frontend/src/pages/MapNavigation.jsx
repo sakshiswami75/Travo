@@ -410,11 +410,18 @@ function MapNavigation() {
         setRoutes(generatedRoutes);
         setAiAssistantMsg(aiAssistant);
         
-        // Select safest by default
+        // AUTO-SELECT SAFEST IF FASTEST IS DANGEROUS
+        const fastest = generatedRoutes.find(r => r.type === 'fastest') || generatedRoutes[0];
         const safest = generatedRoutes.find(r => r.type === 'safest') || generatedRoutes[0];
-        setSelectedRoute(safest);
         
-        toast.success('Routes generated successfully!', { id: 'route' });
+        if (fastest.score < 70 || fastest.hazards > 0) {
+          console.log('[AI] Fastest route is dangerous. Automatically selecting Safest Route.');
+          setSelectedRoute(safest);
+        } else {
+          setSelectedRoute(fastest);
+        }
+        
+        toast.success('Smart routes analyzed!', { id: 'route' });
         
         // AI Hazard Prediction
         if (safest && safest.hazards > 3 && safest.coordinates && safest.coordinates.length > 0) {

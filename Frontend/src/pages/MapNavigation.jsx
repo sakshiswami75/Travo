@@ -171,7 +171,7 @@ function MapNavigation() {
   const [markers, setMarkers] = useState([]);
   const [heatData, setHeatData] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
-  const [mapCenter, setMapCenter] = useState([19.0760, 72.8777]); 
+  const [mapCenter, setMapCenter] = useState([18.5204, 73.8567]); // Default to Pune for Demo 
   const [mapZoom, setMapZoom] = useState(13);
 
   // ── Search & Input State ──
@@ -353,63 +353,30 @@ function MapNavigation() {
     sourceQueryRef.current = sourceQuery;
   }, [sourceQuery]);
 
-  // ── 1. Aggressive GPS Acquisition (Essential Fix) ──
+  // ── 1. GPS Tracking (DISABLED as per user request for simulation/demo) ──
   useEffect(() => {
     fetchMapData();
     
-    if (!navigator.geolocation) {
-      toast.error('Geolocation not supported');
-      return;
-    }
-
+    // We only do a single check for initial location if needed, 
+    // but we don't watch or force jump anymore.
     const onLocationSuccess = async (pos) => {
-      const { latitude, longitude, accuracy } = pos.coords;
+      const { latitude, longitude } = pos.coords;
       const loc = [latitude, longitude];
-      console.log(`[GPS] Fix acquired: ${latitude}, ${longitude} (±${accuracy}m)`);
-      
       setUserLocation(loc);
-
-      // If we haven't locked a high-accuracy center yet, keep following the GPS
-      if (!initialLocationSetRef.current) {
-        setMapCenter(loc);
-
-        // If accuracy is good (less than 150m), lock it so it stops jumping
-        if (accuracy < 150) {
-          initialLocationSetRef.current = true;
-          console.log('[GPS] High accuracy fix locked.');
-        }
-
-        // Wait for the user to explicitly click "Use My Current Location" or "Your Location"
-      } else if (sourceQueryRef.current.includes('Your Location') && destCoords && sourceCoords) {
-        // If we already have a route but our 'Your Location' just shifted significantly (more than 500m)
-        // re-calculate the route automatically from the new precise location
-        const dist = Math.hypot(latitude - sourceCoords[0], longitude - sourceCoords[1]);
-        if (dist > 0.005) { // ~500 meters
-          console.log('[GPS] Location shift detected while routing. Updating route...');
-          setSourceCoords(loc);
-          generateRoutesAuto(loc, destCoords);
-        }
-      }
+      console.log(`[GPS] Location found but tracking is disabled: ${latitude}, ${longitude}`);
     };
 
     const onLocationError = (err) => {
-      console.warn('[GPS] Error:', err.code, err.message);
-      if (!userLocation) toast.error('Waiting for GPS signal...');
+      console.warn('[GPS] Geolocation disabled or unavailable');
     };
 
-    // Quick initial check
-    navigator.geolocation.getCurrentPosition(onLocationSuccess, onLocationError, { enableHighAccuracy: true });
-
-    // Continuous tracking
-    const id = navigator.geolocation.watchPosition(onLocationSuccess, onLocationError, { 
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0 
-    });
-    watchIdRef.current = id;
+    // Only get location once to show the "blue dot" but don't move the map
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(onLocationSuccess, onLocationError, { enableHighAccuracy: true });
+    }
 
     return () => {
-      if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
+      // No watch to clear
     };
   }, []);
 

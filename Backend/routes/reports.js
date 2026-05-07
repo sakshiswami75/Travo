@@ -358,10 +358,12 @@ router.post('/create', protect, async (req, res) => {
     const city = parts.length > 1 ? parts[1].trim() : parts[0].trim();
     const municipality = `${city} Municipal Corporation`;
 
-    // 2. Calculate Reward Points
-    let rewardEarned = 50; // Basic
+    // 2. Calculate Reward Points based on severity rubric
+    let rewardEarned = 10; // Base points for participation
     if (severity === 'Dangerous' || severity === 'Critical') rewardEarned = 150;
     else if (severity === 'High') rewardEarned = 100;
+    else if (severity === 'Medium') rewardEarned = 50;
+    else if (severity === 'Low') rewardEarned = 25;
 
     const report = await Report.create({
       user: req.user.id,

@@ -20,21 +20,8 @@ export default function Alerts() {
   }, []);
 
   const fetchLiveAlerts = () => {
-    // Attempt to get location to get localized hazard warnings
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          loadData(lat, lng);
-        },
-        () => {
-          loadData(); // Fallback without location
-        }
-      );
-    } else {
-      loadData();
-    }
+    // Just load data without live GPS
+    loadData();
   };
 
   const loadData = async (lat, lng) => {

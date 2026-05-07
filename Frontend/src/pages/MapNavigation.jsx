@@ -216,73 +216,10 @@ function MapNavigation() {
     sourceQueryRef.current = sourceQuery;
   }, [sourceQuery]);
 
-  // ── 1. Aggressive GPS Acquisition (Restored after merge) ──
+  // ── 1. GPS Tracking (COMPLETELY DISABLED for demo) ──
   useEffect(() => {
     fetchMapData();
-    
-    if (!navigator.geolocation) {
-      toast.error('Geolocation not supported');
-      return;
-    }
-
-    const onLocationSuccess = async (pos) => {
-      const { latitude, longitude, accuracy } = pos.coords;
-      const loc = [latitude, longitude];
-      console.log(`[GPS] Fix acquired: ${latitude}, ${longitude} (±${accuracy}m)`);
-      
-      setUserLocation(loc);
-
-      // If we haven't locked a high-accuracy center yet, keep following the GPS
-      if (!initialLocationSetRef.current) {
-        setMapCenter(loc);
-        setSourceCoords(loc);
-
-        // If accuracy is good (less than 150m), lock it so it stops jumping
-        if (accuracy < 150) {
-          initialLocationSetRef.current = true;
-          console.log('[GPS] High accuracy fix locked.');
-        }
-
-        // Update UI Label
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`);
-          const data = await res.json();
-          if (data && data.address) {
-            const city = data.address.city || data.address.town || data.address.village || data.address.suburb || 'Location';
-            setSourceQuery(`Your Location (${city})`);
-          }
-        } catch(e) {}
-      } else if (sourceQueryRef.current.includes('Your Location') && destCoords) {
-        // If we already have a route but our 'Your Location' just shifted significantly (more than 500m)
-        // re-calculate the route automatically from the new precise location
-        const dist = Math.hypot(latitude - sourceCoords[0], longitude - sourceCoords[1]);
-        if (dist > 0.005) { // ~500 meters
-          console.log('[GPS] Location shift detected while routing. Updating route...');
-          setSourceCoords(loc);
-          generateRoutesAuto(loc, destCoords);
-        }
-      }
-    };
-
-    const onLocationError = (err) => {
-      console.warn('[GPS] Error:', err.code, err.message);
-      if (!userLocation) toast.error('Waiting for GPS signal...');
-    };
-
-    // Quick initial check
-    navigator.geolocation.getCurrentPosition(onLocationSuccess, onLocationError, { enableHighAccuracy: true });
-
-    // Continuous tracking
-    const id = navigator.geolocation.watchPosition(onLocationSuccess, onLocationError, { 
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0 
-    });
-    watchIdRef.current = id;
-
-    return () => {
-      if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
-    };
+    console.log('[GPS] Live tracking is disabled.');
   }, []);
 
   // ── Voice Alert Helper ──
@@ -558,71 +495,17 @@ function MapNavigation() {
     }
   };
 
-  // ── REAL Live Navigation ──
+  // ── REAL Live Navigation (GPS DISABLED for demo) ──
   const startNavigation = () => {
     if (!selectedRoute) return;
     setIsNavigating(true);
     setMapZoom(18);
     speak(`Starting navigation on the ${selectedRoute.type} route. Head towards the highlighted path.`);
-
-    if (navigator.geolocation) {
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          const loc = [pos.coords.latitude, pos.coords.longitude];
-          setUserLocation(loc);
-          setMapCenter(loc);
-
-          let closestDist = Infinity;
-          let closestIdx = 0;
-          selectedRoute.coordinates.forEach((c, idx) => {
-             const d = Math.hypot(c[0] - loc[0], c[1] - loc[1]);
-             if (d < closestDist) { closestDist = d; closestIdx = idx; }
-          });
-
-          // Rerouting if too far (500m)
-          if (closestDist > 0.005) { 
-            speak('You are off route. Recalculating safer route.');
-            toast.error('Rerouting...');
-            setSourceCoords(loc);
-            setSourceQuery('Your Location');
-            generateRoutesAuto(loc, destCoords);
-            return;
-          }
-
-          const upcomingInstr = selectedRoute.instructions?.find(i => i.waypoint_index > closestIdx);
-          if (upcomingInstr && upcomingInstr.instruction !== currentInstruction) {
-             setCurrentInstruction(upcomingInstr.instruction);
-             if (upcomingInstr.instruction.includes('Turn')) {
-               speak(upcomingInstr.instruction);
-             }
-          }
-
-          const nearbyHazard = markers.find(m => Math.hypot(m.lat - loc[0], m.lng - loc[1]) < 0.0015);
-          if (nearbyHazard && lastSpokenHazardRef.current !== nearbyHazard.id) {
-            if (nearbyHazard.severity === 'Critical') {
-              speak('Warning. Critical pothole hazard detected ahead.');
-            } else if (nearbyHazard.severity === 'High') {
-              speak('Caution. Dangerous road condition ahead.');
-            }
-            lastSpokenHazardRef.current = nearbyHazard.id;
-          }
-
-          const verifyHazard = markers.find(m => Math.hypot(m.lat - loc[0], m.lng - loc[1]) < 0.0003 && !verifiedPotholes.current.has(m.id));
-          if (verifyHazard && !verificationPopup) {
-            setVerificationPopup(verifyHazard);
-            speak('You are near a reported hazard. Is it still there?');
-          }
-        },
-        (err) => console.warn('GPS Error:', err),
-        { enableHighAccuracy: true, maximumAge: 0 }
-      );
-    } else {
-      toast.error('GPS tracking not supported.');
-    }
+    console.log('[GPS] Live tracking disabled for navigation demo.');
+    toast('Live GPS tracking is disabled for this demo.', { icon: '🚫' });
   };
 
   const endNavigation = () => {
-    if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
     setIsNavigating(false);
     setMapZoom(14);
     setVerificationPopup(null);
@@ -858,15 +741,14 @@ function MapNavigation() {
               </Marker>
             )}
 
-            {/* Inactive Routes */}
-            {!isNavigating && routes.filter(r => r.id !== selectedRoute?.id).map(r => (
+            {/* Inactive Routes - Now solid and clearly visible */}
+            {!isNavigating && routes.filter(r => r.id !== selectedRoute?.id).map((r) => (
               <Polyline 
                 key={r.id} 
                 positions={r.coordinates} 
                 color={getRouteColor(r.type)} 
-                weight={6} 
-                opacity={0.6} 
-                dashArray="1, 12" 
+                weight={7} 
+                opacity={0.5} 
                 eventHandlers={{ click: () => setSelectedRoute(r) }} 
               />
             ))}
@@ -931,14 +813,14 @@ function MapNavigation() {
             <motion.div 
               key="route-selection-sheet"
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="absolute bottom-[72px] left-0 right-0 z-[1000] bg-surface rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.15)] flex flex-col max-h-[75vh] md:max-h-[60vh]"
+              className="absolute bottom-[72px] left-0 right-0 z-[1000] bg-surface rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.15)] flex flex-col max-h-[40vh] md:max-h-[45vh]"
             >
-              <div className="w-full flex justify-center py-3">
-                <div className="w-12 h-1.5 bg-outline-variant/40 rounded-full"></div>
+              <div className="w-full flex justify-center py-2">
+                <div className="w-10 h-1 bg-outline-variant/30 rounded-full"></div>
               </div>
               
-              <div className="px-5 pb-4 flex justify-between items-center">
-                <h2 className="text-xl font-bold text-on-surface">Route Options</h2>
+              <div className="px-5 pb-2 flex justify-between items-center">
+                <h2 className="text-lg font-bold text-on-surface">Route Options</h2>
                 <button onClick={clearRoutes} className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors">
                   <span className="material-symbols-outlined text-[20px]">close</span>
                 </button>
@@ -969,8 +851,8 @@ function MapNavigation() {
                             <span className="material-symbols-outlined text-[18px]">{r.type === 'safest' ? 'health_and_safety' : r.type === 'fastest' ? 'bolt' : 'alt_route'}</span>
                           </div>
                           <div>
-                            <div className="text-base font-black text-on-surface capitalize tracking-wide">{r.type === 'safest' ? 'Ride Comfort Mode' : r.type === 'fastest' ? 'Fastest Route' : 'Alternate Route'}</div>
-                            <div className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">{r.type === 'safest' ? 'AI Optimized Safety' : 'Time Optimized'}</div>
+                            <div className="text-base font-black text-on-surface capitalize tracking-wide">{r.title || (r.type === 'safest' ? 'Optimal Path' : r.type === 'fastest' ? 'Fastest Route' : 'Alternate Route')}</div>
+                            <div className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">{r.type === 'safest' ? 'AI Optimized Safety' : r.type === 'fastest' ? 'Time Optimized' : 'Bypass Route'}</div>
                           </div>
                         </div>
                         <div className="text-right">
@@ -979,45 +861,31 @@ function MapNavigation() {
                         </div>
                       </div>
 
-                      {/* Route Metrics Differentiated by Type */}
+                      {/* Route Metrics */}
                       <div className="bg-surface-container-lowest rounded-lg p-2 flex flex-wrap gap-1.5 mt-1">
-                        {r.type === 'fastest' ? (
-                          <>
                             <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-surface-container rounded-md">
-                              <span className={`material-symbols-outlined text-[12px] ${r.trafficLevel.includes('Heavy') ? 'text-red-500' : r.trafficLevel.includes('Moderate') ? 'text-orange-500' : 'text-green-500'}`}>traffic</span>
+                              <span className={`material-symbols-outlined text-[12px] ${r.trafficLevel.includes('Heavy') || r.trafficLevel.includes('Severe') ? 'text-red-500' : r.trafficLevel.includes('Moderate') ? 'text-orange-500' : 'text-green-500'}`}>traffic</span>
                               {r.trafficLevel}
                             </div>
                             <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-surface-container rounded-md">
                               <span className="material-symbols-outlined text-[12px] text-blue-500">local_gas_station</span>
-                              {r.fuelEfficiency}
+                              {r.fuelEfficiency || 'High'}
                             </div>
-                            <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-error-container text-error rounded-md">
-                              <span className="material-symbols-outlined text-[12px]">warning</span>
-                              {r.hazards} Hazards
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-[#4CAF50]/20 text-green-700 rounded-md">
-                              <span className="material-symbols-outlined text-[12px]">shield</span>
-                              AI: {r.score}/100
-                            </div>
-                            <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-surface-container rounded-md">
-                              <span className="material-symbols-outlined text-[12px] text-purple-500">airline_seat_recline_extra</span>
-                              {r.comfortRating}
-                            </div>
-                            {getHazardReductionText(r) && (
-                              <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-surface-container rounded-md">
-                                <span className="material-symbols-outlined text-[12px] text-orange-500">reduce_capacity</span>
-                                {getHazardReductionText(r)}
+                            {r.hazards > 0 ? (
+                              <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-error-container text-error rounded-md">
+                                <span className="material-symbols-outlined text-[12px]">warning</span>
+                                {r.hazards} Hazards
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-[#4CAF50]/10 text-[#4CAF50] rounded-md">
+                                <span className="material-symbols-outlined text-[12px]">verified</span>
+                                Hazard Free
                               </div>
                             )}
-                          </>
-                        )}
-                      </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
 
                 <button onClick={startNavigation} className="w-full mt-4 py-3.5 rounded-xl bg-primary text-on-primary font-bold text-base shadow-lg shadow-primary/20 hover:shadow-xl hover:-translate-y-0.5 transition-all flex justify-center items-center gap-2">
                   <span className="material-symbols-outlined">navigation</span>

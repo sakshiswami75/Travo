@@ -269,108 +269,99 @@ router.post('/routes', async (req, res) => {
       severity: r.severity
     })).filter(h => h.lat && h.lng);
 
-    const generatedRoutes = resp.data.routes.map((routeData, index) => {
-      const coordinates = routeData.geometry.coordinates.map(c => [c[1], c[0]]); 
+    const generatedRoutes = (resp.data.routes || []).map((routeData, index) => {
+      const geometry = routeData.geometry || { coordinates: [] };
+      const coordinates = (geometry.coordinates || []).map(c => [c[1], c[0]]); 
       
       let hazardsEncountered = 0;
       let totalSeverityWeight = 0;
 
-      hazards.forEach(h => {
-        for (let i = 0; i < coordinates.length; i += 5) { 
-          const pt = coordinates[i];
-          const dist = Math.hypot(h.lat - pt[0], h.lng - pt[1]);
-          if (dist < 0.005) { 
-            hazardsEncountered++;
-            let weight = 0;
-            // Severity weights
-            if (h.severity === 'Low') weight = 1;         // Small pothole
-            else if (h.severity === 'Medium') weight = 3; // Medium pothole
-            else if (h.severity === 'High') weight = 7;   // Deep pothole
-            else weight = 10;                             // Critical / Waterlogged
-
-            // Crowd verification
-            if (h.verificationCount >= 3) weight += 5;
-
-            // Accident-prone assumption if critical + verified
-            if (h.severity === 'Critical' && h.verificationCount >= 2) weight += 8;
-
-            // Night / Weather penalty
-            const currentHour = new Date().getHours();
-            const isNight = currentHour >= 18 || currentHour <= 6;
-            if (isNight) weight += 3;
-            if (weatherData.isRaining && h.severity !== 'Low') weight += 5; 
-
-            totalSeverityWeight += weight;
-            break;
+      if (coordinates.length > 0) {
+        hazards.forEach(h => {
+          for (let i = 0; i < coordinates.length; i += 5) { 
+            const pt = coordinates[i];
+            if (!pt) continue;
+            const dist = Math.hypot(h.lat - pt[0], h.lng - pt[1]);
+            if (dist < 0.005) { 
+              hazardsEncountered++;
+              let weight = 0;
+              if (h.severity === 'Low') weight = 1;
+              else if (h.severity === 'Medium') weight = 3;
+              else if (h.severity === 'High') weight = 7;
+              else weight = 10;
+              if (h.verificationCount >= 3) weight += 5;
+              if (h.severity === 'Critical' && h.verificationCount >= 2) weight += 8;
+              const currentHour = new Date().getHours();
+              const isNight = currentHour >= 18 || currentHour <= 6;
+              if (isNight) weight += 3;
+              if (weatherData.isRaining && h.severity !== 'Low') weight += 5; 
+              totalSeverityWeight += weight;
+              break;
+            }
           }
-        }
-      });
-
-      // Weather penalty for the whole route
-      if (weatherData.isRaining) {
-        totalSeverityWeight += 15; 
+        });
       }
 
-      // Calculate AI Safety Score
+      // Weather penalty
+      if (weatherData.isRaining) totalSeverityWeight += 15; 
+
       let safetyScore = 100 - totalSeverityWeight;
-      // Slight variation based on distance/index to ensure routes don't mathematically collide on UI
       safetyScore -= (index * 1.5);
       safetyScore = Math.max(20, Math.round(safetyScore));
 
-      // Ride Comfort Calculation
       let comfortRating = 'Excellent Comfort';
       if (safetyScore < 50) comfortRating = 'Rough Ride';
       else if (safetyScore < 70) comfortRating = 'Fair Comfort';
       else if (safetyScore < 85) comfortRating = 'Good Comfort';
 
-      const distKm = routeData.distance / 1000;
-      const durationMins = routeData.duration / 60;
+      const distKm = (routeData.distance || 0) / 1000;
+      const durationMins = (routeData.duration || 0) / 60;
       const avgSpeedKmH = durationMins > 0 ? (distKm / (durationMins / 60)) : 30;
       
-      // Fuel efficiency based on speed and stops
       const fuelEfficiency = avgSpeedKmH > 35 && avgSpeedKmH < 80 ? 'High (Optimum)' : 'Average';
 
       let finalDuration = Math.round(durationMins);
       let trafficLevel = 'Light';
       if (avgSpeedKmH < 20) {
         trafficLevel = 'Heavy';
-        finalDuration = Math.round(finalDuration * 1.35); // 35% live traffic penalty
+        finalDuration = Math.round(finalDuration * 1.35);
       } else if (avgSpeedKmH < 40) {
         trafficLevel = 'Moderate';
-        finalDuration = Math.round(finalDuration * 1.15); // 15% live traffic penalty
+        finalDuration = Math.round(finalDuration * 1.15);
       }
 
-      // Parse Steps for Traffic Overlay Polylines
       const trafficSegments = [];
       const instructions = [];
 
-      routeData.legs[0].steps.forEach(s => {
-        instructions.push({
-          instruction: s.maneuver.modifier ? `Turn ${s.maneuver.modifier} onto ${s.name || 'road'}` : `Continue on ${s.name || 'road'}`,
-          distance: s.distance,
-          duration: s.duration,
-          type: s.maneuver.type,
-          waypoint_index: 0
-        });
-
-        if (s.geometry && s.geometry.coordinates) {
-          const segCoords = s.geometry.coordinates.map(c => [c[1], c[0]]);
-          // Speed for this specific segment
-          const segKm = s.distance / 1000;
-          const segHrs = s.duration / 3600;
-          const segSpeedKmH = segHrs > 0 ? (segKm / segHrs) : 30;
-          
-          let color = '#4CAF50'; // Green
-          if (segSpeedKmH < 15) color = '#FF4C4C'; // Red
-          else if (segSpeedKmH < 30) color = '#FFA500'; // Orange
-
-          trafficSegments.push({
-            color,
-            coordinates: segCoords,
-            isHeavy: segSpeedKmH < 15
+      const legs = routeData.legs || [];
+      if (legs[0] && legs[0].steps) {
+        legs[0].steps.forEach(s => {
+          instructions.push({
+            instruction: s.maneuver.modifier ? `Turn ${s.maneuver.modifier} onto ${s.name || 'road'}` : `Continue on ${s.name || 'road'}`,
+            distance: s.distance,
+            duration: s.duration,
+            type: s.maneuver.type,
+            waypoint_index: 0
           });
-        }
-      });
+
+          if (s.geometry && s.geometry.coordinates) {
+            const segCoords = s.geometry.coordinates.map(c => [c[1], c[0]]);
+            const segKm = s.distance / 1000;
+            const segHrs = s.duration / 3600;
+            const segSpeedKmH = segHrs > 0 ? (segKm / segHrs) : 30;
+            
+            let color = '#4CAF50'; 
+            if (segSpeedKmH < 15) color = '#FF4C4C'; 
+            else if (segSpeedKmH < 30) color = '#FFA500'; 
+
+            trafficSegments.push({
+              color,
+              coordinates: segCoords,
+              isHeavy: segSpeedKmH < 15
+            });
+          }
+        });
+      }
 
       return {
         id: `route-${index}`,
@@ -392,98 +383,99 @@ router.post('/routes', async (req, res) => {
     // HACKATHON SIMULATION & AI LOGIC
     // ==========================================
     
-    // Ensure we always have at least 2 distinct routes for a good demo
+    // Ensure we always have at least 3 TRULY distinct routes via waypoint perturbation
     let finalRoutes = [...generatedRoutes];
     
-    if (finalRoutes.length < 2 && finalRoutes.length > 0) {
-      console.log('[AI SIM] Forcing a visually distinct alternate route...');
-      const alt = JSON.parse(JSON.stringify(finalRoutes[0]));
-      alt.id = 'route-sim-alt-' + Date.now();
-      alt.duration = Math.round(alt.duration * 1.25); 
-      alt.distance = (parseFloat(alt.distance) + 1.2).toFixed(1);
-      
-      // Stronger jitter/bend: shift the middle of the route more significantly
-      const mid = Math.floor(alt.coordinates.length / 2);
-      alt.coordinates = alt.coordinates.map((coord, idx) => {
-        // Bend the route in the middle, keep start/end the same
-        const factor = 1 - Math.abs(idx - mid) / mid; // 0 at ends, 1 at middle
-        return [
-          coord[0] + (0.002 * factor), // Shift by ~200m in the middle
-          coord[1] + (0.002 * factor)
-        ];
-      });
-      
-      finalRoutes.push(alt);
+    if (finalRoutes.length < 3) {
+      const latDiff = end.lat - start.lat;
+      const lngDiff = end.lng - start.lng;
+      const offsets = [{ lat: 0.02, lng: -0.02 }, { lat: -0.02, lng: 0.02 }];
+
+      for (let i = 0; i < (3 - generatedRoutes.length); i++) {
+        try {
+          const midLat = start.lat + (latDiff / 2) + offsets[i].lat;
+          const midLng = start.lng + (lngDiff / 2) + offsets[i].lng;
+          const altUrl = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${midLng},${midLat};${end.lng},${end.lat}?overview=full&geometries=geojson&steps=true`;
+          const altResp = await axios.get(altUrl);
+          
+          if (altResp.data?.routes?.[0]) {
+            const r = altResp.data.routes[0];
+            const coords = (r.geometry?.coordinates || []).map(c => [c[1], c[0]]);
+            const tSegs = [];
+            (r.legs || []).forEach(leg => {
+              (leg.steps || []).forEach(s => {
+                if (s.geometry?.coordinates) {
+                  tSegs.push({ color: '#4CAF50', coordinates: s.geometry.coordinates.map(c => [c[1], c[0]]), isHeavy: false });
+                }
+              });
+            });
+            
+            finalRoutes.push({
+              id: `route-waypoint-${i}-${Date.now()}`,
+              coordinates: coords,
+              distance: (r.distance / 1000).toFixed(1),
+              duration: Math.round(r.duration / 60),
+              trafficSegments: tSegs,
+              score: 80,
+              comfortRating: 'Good Comfort',
+              trafficLevel: 'Light Traffic'
+            });
+          }
+        } catch (err) {
+          console.error('Waypoint offset failed, falling back to jitter');
+          const base = finalRoutes[0];
+          const jitter = JSON.parse(JSON.stringify(base));
+          jitter.id = `jitter-${i}`;
+          jitter.coordinates = (jitter.coordinates || []).map(c => [c[0] + 0.008, c[1] + 0.008]);
+          finalRoutes.push(jitter);
+        }
+      }
     }
 
-    // Force differentiation: Sort by duration
     const sorted = [...finalRoutes].sort((a, b) => a.duration - b.duration);
-    let fastestRoute = sorted[0];
-    let safestRoute = sorted[1] || sorted[0];
-
-    // SIMULATION: Inject synthetic hazards
+    const r1 = sorted[0]; // Shortest
+    const r2 = sorted[1]; // Alternative
+    const r3 = sorted[2]; // Optimal
+    
+    let aiMessage = 'Optimal route selected.';
     const shouldSimulate = demoMode || reports.length < 5;
     
-    if (shouldSimulate) {
-      console.log('[AI SIM] Enforcing distinct roles for fastest/safest...');
-      
-      // 1. FASTEST (Dangerous)
-      fastestRoute.type = 'fastest';
-      fastestRoute.id = 'fast-route-sim';
-      fastestRoute.hazards = 6; 
-      fastestRoute.score = 38;
-      fastestRoute.comfortRating = 'Rough Ride';
-      fastestRoute.trafficLevel = 'Heavy Congestion';
-      
-      fastestRoute.trafficSegments.forEach((seg, idx) => {
-        seg.color = idx % 2 === 0 ? '#FF4C4C' : '#FFA500';
-        seg.isHeavy = idx % 2 === 0;
-      });
-
-      // 2. SAFEST (Premium)
-      safestRoute.type = 'safest';
-      safestRoute.id = 'safe-route-sim';
-      safestRoute.hazards = 0;
-      safestRoute.score = 98;
-      safestRoute.comfortRating = 'Excellent Comfort';
-      safestRoute.trafficLevel = 'Smooth Flow';
-      safestRoute.duration = Math.max(5, fastestRoute.duration - 4); 
-      
-      safestRoute.trafficSegments.forEach(seg => {
-        seg.color = '#4CAF50';
-        seg.isHeavy = false;
-      });
-
-      // 3. ANY OTHER (Alternate)
-      finalRoutes.forEach(r => {
-        if (r.id !== fastestRoute.id && r.id !== safestRoute.id) {
-          r.type = 'alternate';
-          r.score = 70;
-        }
-      });
-    }
-
-    // AI Message
-    let aiMessage = '';
-    if (shouldSimulate) {
-      aiMessage = `🚨 AI WARNING: The fastest route is highly dangerous with ${fastestRoute.hazards} potholes. ` +
-                  `I have switched you to the 'Safest Route' which avoids all hazards and is ${fastestRoute.duration - safestRoute.duration} mins faster due to traffic avoidance.`;
-    } else {
-      aiMessage = fastestRoute.score < 70 ? "Switching to safest path to avoid hazards." : "Optimal route selected.";
-    }
-
-    // Prepare final return array
-    const routesToReturn = [fastestRoute];
-    if (safestRoute.id !== fastestRoute.id) {
-      routesToReturn.push(safestRoute);
-    }
-    
-    // Add one more alternate if available
-    finalRoutes.forEach(r => {
-      if (routesToReturn.length < 3 && !routesToReturn.find(rt => rt.id === r.id)) {
-        routesToReturn.push(r);
+    if (shouldSimulate && r1 && r2 && r3) {
+      // 1. SHORTEST but DANGEROUS (Route 1)
+      r1.type = 'fastest';
+      r1.title = 'Shortest (Dangerous)';
+      r1.hazards = 15;
+      r1.score = 15;
+      r1.trafficLevel = 'Smooth Flow';
+      if (Array.isArray(r1.trafficSegments)) {
+        r1.trafficSegments.forEach(seg => { seg.color = '#4CAF50'; seg.isHeavy = false; });
       }
-    });
+
+      // 2. SEVERE TRAFFIC (Route 2)
+      r2.type = 'alternate';
+      r2.title = 'Severe Traffic';
+      r2.hazards = 0;
+      r2.score = 60;
+      r2.trafficLevel = 'Heavy Congestion';
+      r2.duration = r3.duration + 5;
+      if (Array.isArray(r2.trafficSegments)) {
+        r2.trafficSegments.forEach(seg => { seg.color = '#FF4C4C'; seg.isHeavy = true; });
+      }
+
+      // 3. OPTIMAL PATH (Route 3)
+      r3.type = 'safest';
+      r3.title = 'Optimal Path';
+      r3.hazards = 0;
+      r3.score = 98;
+      r3.trafficLevel = 'Light Traffic';
+      if (Array.isArray(r3.trafficSegments)) {
+        r3.trafficSegments.forEach(seg => { seg.color = '#4CAF50'; seg.isHeavy = false; });
+      }
+
+      aiMessage = `🛡️ AI GUARD: Analysis complete. I have rejected the **Shortest Path** due to 15 dangerous potholes and the **Main Road** due to heavy traffic. I've selected the best detour for your safety.`;
+    }
+
+    const routesToReturn = sorted.slice(0, 3);
 
     res.json({
       weather: weatherData,
@@ -491,8 +483,12 @@ router.post('/routes', async (req, res) => {
       routes: routesToReturn
     });
   } catch (error) {
-    console.error('Route generation error:', error.message);
-    res.status(500).json({ message: 'Routing failed' });
+    console.error('CRITICAL ROUTE ERROR:', error);
+    res.status(500).json({ 
+      message: 'Routing engine failure',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 

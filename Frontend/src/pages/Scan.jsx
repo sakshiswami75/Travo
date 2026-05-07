@@ -1,5 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import TopAppBar from '../components/TopAppBar';
 import BottomNavBar from '../components/BottomNavBar';
 import toast from 'react-hot-toast';
@@ -16,6 +19,15 @@ const SEVERITY_CONFIG = {
 
 const HAZARD_TYPES = ['Pothole', 'Crack', 'Waterlogging', 'Construction', 'Accident', 'Missing Manhole', 'Traffic Block', 'Other'];
 const SEVERITIES = ['Low', 'Medium', 'High', 'Dangerous'];
+
+function MapPickerEvents({ onSelect }) {
+  useMapEvents({
+    click(e) {
+      onSelect(e.latlng);
+    }
+  });
+  return null;
+}
 
 export default function Scan() {
   const navigate = useNavigate();
@@ -50,6 +62,8 @@ export default function Scan() {
   const [gps, setGps] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState(null);
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const [tempMarker, setTempMarker] = useState(null);
 
   // Tracking state
   const [myReports, setMyReports] = useState([]);
@@ -74,41 +88,78 @@ export default function Scan() {
     }
   };
 
-  // GPS + Reverse Geocode
-  const captureGPS = useCallback(() => {
-    if (!navigator.geolocation) {
-      setGpsError('Geolocation not supported by this browser');
+  // GPS + Map Selection Logic
+  const handleMapSelection = async (latlng) => {
+    const { lat, lng } = latlng;
+    setGpsLoading(true);
+    try {
+      const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`);
+      
+      // Check if the location is a road/highway or near one
+      const address = res.data?.address || {};
+      const isRoad = res.data && (
+        res.data.class === 'highway' || 
+        res.data.type === 'highway' || 
+        res.data.addresstype === 'road' || 
+        address.road || 
+        address.street ||
+        address.highway ||
+        address.footway ||
+        address.path
+      );
+      
+      if (!isRoad) {
+        toast.error('Please click directly on the road');
+        setGpsLoading(false);
+        return;
+      }
+
+      setGps({ lat, lng });
+      setTempMarker({ lat, lng });
+      
+      if (res.data && res.data.display_name) {
+        const shortName = res.data.display_name.split(',').slice(0, 3).join(',');
+        setLocationName(shortName);
+      } else {
+        setLocationName(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      }
+    } catch (e) {
+      toast.error('Could not verify road location');
+    } finally {
+      setGpsLoading(false);
+    }
+  };
+
+  const geocodeLocation = async () => {
+    if (!locationName.trim()) {
+      toast.error('Please type a location first');
       return;
     }
     setGpsLoading(true);
-    setGpsError(null);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setGps({ lat, lng, accuracy: pos.coords.accuracy });
+    try {
+      const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationName)}&limit=1&addressdetails=1`);
+      if (res.data && res.data.length > 0) {
+        const place = res.data[0];
+        const { lat, lon, display_name, address } = place;
         
-        try {
-          const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-          if (res.data && res.data.display_name) {
-            const shortName = res.data.display_name.split(',').slice(0, 3).join(',');
-            setLocationName(shortName);
-          }
-        } catch (e) {
-          console.warn('Reverse geocode failed', e);
-          setLocationName(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-        }
-        setGpsLoading(false);
-      },
-      (err) => {
-        console.warn('GPS error:', err.message);
-        setGpsError('Location access denied. Please manually describe the location.');
-        setGps({ lat: 19.0760, lng: 72.8777, accuracy: 9999, fallback: true });
-        setLocationName('Mumbai, India (Approximate)');
-        setGpsLoading(false);
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
+        const newCoords = { lat: parseFloat(lat), lng: parseFloat(lon) };
+        setGps(newCoords);
+        setTempMarker(newCoords);
+        setLocationName(display_name.split(',').slice(0, 3).join(','));
+        toast.success('Location found!');
+      } else {
+        toast.error('Could not find that location. Try adding city name.');
+      }
+    } catch (e) {
+      toast.error('Geocoding failed');
+    } finally {
+      setGpsLoading(false);
+    }
+  };
+
+  const captureGPS = useCallback(() => {
+    // Disabled as per user request
+    console.log('[GPS] Live tracking disabled for Scan.');
   }, []);
 
   const handleFileSelected = (file) => {
@@ -175,10 +226,10 @@ export default function Scan() {
       toast.error('Please analyze the image first');
       return;
     }
-    if (!gps) {
-      toast.error('Location is required. Please allow GPS.');
-      return;
-    }
+    // Fallback coordinates if no location selected (Pune center)
+    const lat = gps?.lat || 18.5204;
+    const lng = gps?.lng || 73.8567;
+
     if (!hazardType || !severityOverride) {
       toast.error('Please fill in all required fields (Hazard Type, Severity)');
       return;
@@ -189,9 +240,9 @@ export default function Scan() {
       const payload = {
         imageUrl: cloudinaryUrl,
         imagePublicId: cloudinaryPublicId || '',
-        latitude: gps.lat,
-        longitude: gps.lng,
-        locationName: locationName || `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}`,
+        latitude: lat,
+        longitude: lng,
+        locationName: locationName || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
         hazardType,
         severity: severityOverride,
         confidence: aiResult?.confidence || 0,
@@ -317,10 +368,44 @@ export default function Scan() {
                 {/* Location */}
                 <div>
                   <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2 block">Location</label>
-                  <div className="bg-surface-container border border-outline-variant/30 rounded-xl p-3 flex items-center gap-3">
-                    <span className="material-symbols-outlined text-primary">location_on</span>
-                    <input type="text" value={locationName} onChange={e => setLocationName(e.target.value)} className="bg-transparent w-full outline-none text-sm font-medium text-on-surface" placeholder={gpsLoading ? "Fetching GPS..." : "Enter location name"} />
-                    <button onClick={captureGPS} className="text-primary text-xs font-bold shrink-0">{gpsLoading ? '...' : 'Refresh'}</button>
+                  <div className="flex flex-col gap-2">
+                    <div className="bg-surface-container border border-outline-variant/30 rounded-xl p-3 flex items-center gap-3">
+                      <span className="material-symbols-outlined text-primary">location_on</span>
+                      <input 
+                        type="text" 
+                        value={locationName} 
+                        onChange={e => setLocationName(e.target.value)} 
+                        className="bg-transparent w-full outline-none text-sm font-medium text-on-surface" 
+                        placeholder="Type location or pick on map" 
+                      />
+                      <button onClick={geocodeLocation} className="bg-primary text-on-primary px-3 py-1 rounded-lg text-[10px] font-bold shrink-0">{gpsLoading ? '...' : 'Find'}</button>
+                    </div>
+
+                    <button 
+                      onClick={() => setShowMapPicker(!showMapPicker)}
+                      className={`w-full py-2.5 rounded-xl border-2 border-dashed transition-all flex items-center justify-center gap-2 text-xs font-bold ${showMapPicker ? 'bg-secondary/10 border-secondary text-secondary' : 'bg-surface-container-low border-outline-variant/30 text-on-surface-variant'}`}
+                    >
+                      <span className="material-symbols-outlined text-lg">{showMapPicker ? 'close' : 'map'}</span>
+                      {showMapPicker ? 'Close Map Picker' : 'Choose from Map'}
+                    </button>
+
+                    {showMapPicker && (
+                      <div className="w-full h-64 rounded-2xl overflow-hidden border-2 border-outline-variant/30 shadow-inner relative">
+                        <MapContainer 
+                          center={gps || [18.5204, 73.8567]} 
+                          zoom={14} 
+                          className="w-full h-full"
+                          zoomControl={false}
+                        >
+                          <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
+                          <MapPickerEvents onSelect={handleMapSelection} />
+                          {tempMarker && <Marker position={[tempMarker.lat, tempMarker.lng]} />}
+                        </MapContainer>
+                        <div className="absolute bottom-2 left-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] p-2 rounded-lg text-center font-medium pointer-events-none">
+                          Tap anywhere on the map to set hazard location
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

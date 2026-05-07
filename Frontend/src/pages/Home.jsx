@@ -151,11 +151,6 @@ export default function Home() {
           <div className="flex justify-center w-full">
             <Link 
               to="/complaints" 
-              onClick={() => {
-                if ('geolocation' in navigator) {
-                  navigator.geolocation.getCurrentPosition(() => {}, () => {});
-                }
-              }}
               className="w-full max-w-sm bg-gradient-to-br from-primary-container/20 to-surface-container-lowest border border-primary/20 rounded-[28px] p-6 flex flex-col items-center justify-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-2 active:scale-95 active:shadow-sm transition-all duration-300 group"
             >
               <div className="w-16 h-16 rounded-full bg-primary-container text-primary flex items-center justify-center group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-inner">

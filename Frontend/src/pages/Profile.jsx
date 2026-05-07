@@ -66,7 +66,11 @@ export default function Profile() {
           <div className="absolute top-0 left-0 w-full h-1/3 bg-gradient-to-b from-primary/20 to-transparent"></div>
           
           <div className="w-24 h-24 rounded-full bg-surface-container overflow-hidden border-4 border-surface shadow-lg relative z-10 flex items-center justify-center text-primary-container bg-primary/10 mb-4 animate-pulse-slow">
-            <span className="material-symbols-outlined text-5xl">manage_accounts</span>
+            <img 
+              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'Travo User')}&background=7C3AED&color=fff&size=200`} 
+              alt="Profile" 
+              className="w-full h-full object-cover" 
+            />
           </div>
           
           <h2 className="text-h1 font-h1 text-on-surface relative z-10">{user?.name || 'Driver'}</h2>

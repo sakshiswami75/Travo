@@ -115,8 +115,8 @@ const detectWithGroq = async (imageBuffer) => {
 
   // Sequence of models to try. We prioritize the latest active vision models.
   const MODELS_TO_TRY = [
-    'meta-llama/llama-4-scout-17b-16e-instruct',
-    'llama-3.2-11b-vision-preview'
+    'llama-3.2-11b-vision-preview',
+    'meta-llama/llama-4-scout-17b-16e-instruct'
   ];
 
   let lastError = null;
@@ -128,23 +128,24 @@ const detectWithGroq = async (imageBuffer) => {
         messages: [
           {
             role: 'system',
-            content: `You are a high-precision road hazard inspector. 
-            Your task is to identify potholes, cracks, and road erosion. 
-            Be extremely observant of depth and size.
-            If you see any significant indentation in the road, mark detected: true.
-            Provide a hazard_score from 1-10 where:
-            1-3: Low risk (surface cracks)
-            4-6: Medium risk (moderate potholes)
-            7-8: High risk (large potholes/damage)
-            9-10: Critical risk (massive holes/road failure)`
+            content: `You are a professional Civil Engineer specializing in road maintenance and safety. 
+            Analyze road images for potholes, cracks, and structural hazards. 
+            Use this technical rubric for hazard_score (1-10):
+            1-2: Superficial (Hairline cracks, no depth)
+            3-4: Minor (Surface erosion, < 2cm depth)
+            5-6: Moderate (Clear pothole, 2-5cm depth, creates vehicle vibration)
+            7-8: High (Deep pothole, > 5cm depth, high risk of tire/rim damage)
+            9-10: Critical (Road failure, massive craters, immediate danger to life/property)
+            
+            IMPORTANT: If the image is NOT a road (e.g. food, person, room), set isRoad: false and detected: false.`
           },
           {
             role: 'user',
             content: [
               {
                 type: 'text',
-                text: `Analyze this image for road hazards. Respond strictly in JSON:
-                {"detected": boolean, "isRoad": boolean, "hazard_score": 1-10, "label": string, "description": string, "riskLevel": string, "roadSafetyScore": number, "vehicleDamageProbability": string, "suggestedAction": string}`
+                text: `Perform a technical audit on this road image. Return ONLY a valid JSON object:
+                {"detected": boolean, "isRoad": boolean, "hazard_score": number, "label": "pothole"|"crack"|"erosion"|"none", "description": "technical detail", "riskLevel": "Low"|"Medium"|"High"|"Critical", "roadSafetyScore": 0-100, "vehicleDamageProbability": "Low"|"Moderate"|"High", "suggestedAction": "string"}`
               },
               {
                 type: 'image_url',

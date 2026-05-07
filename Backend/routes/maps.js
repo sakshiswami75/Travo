@@ -396,60 +396,61 @@ router.post('/routes', async (req, res) => {
     let finalRoutes = [...generatedRoutes];
     
     if (finalRoutes.length < 2 && finalRoutes.length > 0) {
-      // Create a visually distinct alternate route for demo purposes
+      console.log('[AI SIM] Forcing a visually distinct alternate route...');
       const alt = JSON.parse(JSON.stringify(finalRoutes[0]));
-      alt.id = 'route-sim-2';
-      alt.duration = Math.round(alt.duration * 1.2); // 20% slower
-      alt.distance = (parseFloat(alt.distance) + 0.8).toFixed(1); // 0.8km longer
+      alt.id = 'route-sim-alt-' + Date.now();
+      alt.duration = Math.round(alt.duration * 1.25); 
+      alt.distance = (parseFloat(alt.distance) + 1.2).toFixed(1);
       
-      // Jitter the coordinates slightly so they don't overlap perfectly on the map
-      alt.coordinates = alt.coordinates.map(coord => [
-        coord[0] + (Math.random() * 0.0004 - 0.0002), 
-        coord[1] + (Math.random() * 0.0004 - 0.0002)
-      ]);
+      // Stronger jitter/bend: shift the middle of the route more significantly
+      const mid = Math.floor(alt.coordinates.length / 2);
+      alt.coordinates = alt.coordinates.map((coord, idx) => {
+        // Bend the route in the middle, keep start/end the same
+        const factor = 1 - Math.abs(idx - mid) / mid; // 0 at ends, 1 at middle
+        return [
+          coord[0] + (0.002 * factor), // Shift by ~200m in the middle
+          coord[1] + (0.002 * factor)
+        ];
+      });
       
       finalRoutes.push(alt);
     }
 
-    // Assign Roles: Fastest vs Safest
-    // We force them to be different for the demo
-    let fastestRoute = finalRoutes.sort((a, b) => a.duration - b.duration)[0];
-    let safestRoute = finalRoutes.find(r => r.id !== fastestRoute.id) || fastestRoute;
+    // Force differentiation: Sort by duration
+    const sorted = [...finalRoutes].sort((a, b) => a.duration - b.duration);
+    let fastestRoute = sorted[0];
+    let safestRoute = sorted[1] || sorted[0];
 
-    // SIMULATION: Inject synthetic hazards for Demo Mode or empty DB
+    // SIMULATION: Inject synthetic hazards
     const shouldSimulate = demoMode || reports.length < 5;
     
     if (shouldSimulate) {
-      console.log('[AI SIM] Differentiating routes for demo...');
+      console.log('[AI SIM] Enforcing distinct roles for fastest/safest...');
       
-      // 1. FASTEST ROUTE (The "Dangerous" one)
+      // 1. FASTEST (Dangerous)
       fastestRoute.type = 'fastest';
-      fastestRoute.hazards = 5; 
-      fastestRoute.score = 45;
+      fastestRoute.id = 'fast-route-sim';
+      fastestRoute.hazards = 6; 
+      fastestRoute.score = 38;
       fastestRoute.comfortRating = 'Rough Ride';
       fastestRoute.trafficLevel = 'Heavy Congestion';
-      fastestRoute.duration += 5; // Add traffic penalty
       
       fastestRoute.trafficSegments.forEach((seg, idx) => {
-        if (idx % 2 === 0) {
-          seg.color = '#FF4C4C'; // Red
-          seg.isHeavy = true;
-        } else {
-          seg.color = '#FFA500'; // Orange
-        }
+        seg.color = idx % 2 === 0 ? '#FF4C4C' : '#FFA500';
+        seg.isHeavy = idx % 2 === 0;
       });
 
-      // 2. SAFEST ROUTE (The "Hero" one)
+      // 2. SAFEST (Premium)
       safestRoute.type = 'safest';
+      safestRoute.id = 'safe-route-sim';
       safestRoute.hazards = 0;
       safestRoute.score = 98;
       safestRoute.comfortRating = 'Excellent Comfort';
-      safestRoute.trafficLevel = 'Free Flow';
-      // Ensure safest is distinct in time
-      safestRoute.duration = Math.max(5, fastestRoute.duration - 2); 
+      safestRoute.trafficLevel = 'Smooth Flow';
+      safestRoute.duration = Math.max(5, fastestRoute.duration - 4); 
       
       safestRoute.trafficSegments.forEach(seg => {
-        seg.color = '#4CAF50'; // Green
+        seg.color = '#4CAF50';
         seg.isHeavy = false;
       });
 
@@ -457,26 +458,27 @@ router.post('/routes', async (req, res) => {
       finalRoutes.forEach(r => {
         if (r.id !== fastestRoute.id && r.id !== safestRoute.id) {
           r.type = 'alternate';
-          r.score = 82;
-          r.duration = fastestRoute.duration + 3;
+          r.score = 70;
         }
       });
     }
 
-    // AI Message Logic
+    // AI Message
     let aiMessage = '';
     if (shouldSimulate) {
-      aiMessage = `🚨 AI ALERT: The fastest route has ${fastestRoute.hazards} severe hazards. ` +
-                  `I have optimized a 'Safest Route' which is ${fastestRoute.duration - safestRoute.duration} mins faster and avoids all known potholes.`;
+      aiMessage = `🚨 AI WARNING: The fastest route is highly dangerous with ${fastestRoute.hazards} potholes. ` +
+                  `I have switched you to the 'Safest Route' which avoids all hazards and is ${fastestRoute.duration - safestRoute.duration} mins faster due to traffic avoidance.`;
     } else {
-      aiMessage = fastestRoute.score < 70 ? "Caution: Potholes detected on the fastest path." : "Roads are clear!";
+      aiMessage = fastestRoute.score < 70 ? "Switching to safest path to avoid hazards." : "Optimal route selected.";
     }
 
-    // Final deduplicated list for the UI
+    // Prepare final return array
     const routesToReturn = [fastestRoute];
-    if (safestRoute.id !== fastestRoute.id) routesToReturn.push(safestRoute);
+    if (safestRoute.id !== fastestRoute.id) {
+      routesToReturn.push(safestRoute);
+    }
     
-    // Add any remaining alternates
+    // Add one more alternate if available
     finalRoutes.forEach(r => {
       if (routesToReturn.length < 3 && !routesToReturn.find(rt => rt.id === r.id)) {
         routesToReturn.push(r);
